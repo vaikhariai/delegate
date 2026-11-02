@@ -275,7 +275,7 @@ export function Workspace() {
               <Icon name="laptop" size={22} />
               <span className="mini-title">{buyer.listing.title}</span>
               <span className="mini-price">{money(buyer.listing.asking_price_minor)}</span>
-              {reservation ? <span className="badge badge-accent">Reserved in sandbox</span> : null}
+              {reservation ? <span className="badge badge-accent">{reservation.status === "expired" ? "Sandbox hold expired" : "Reserved in sandbox"}</span> : null}
             </div>
           ) : null}
 

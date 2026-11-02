@@ -62,7 +62,7 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
             <span data-testid="authority-revision">Revision {mandate.active_revision ?? mandate.current_revision}</span>
             {mandate.status === "active" || mandate.status === "paused" ? (
               <span className={left !== null && left < 120 ? "urgent" : ""} data-testid="authority-expiry">
-                <Icon name="clock" size={16} /> {left === 0 ? "time is up" : `${mmss(left)} left`}
+                <Icon name="clock" size={16} /> {left === 0 ? "time is up" : mmss(left)}{left === 0 ? null : <span className="hide-sm"> left</span>}
               </span>
             ) : null}
           </span>

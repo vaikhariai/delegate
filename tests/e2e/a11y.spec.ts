@@ -31,7 +31,7 @@ test("no serious or critical axe violations on any screen", async ({ page }) => 
   await seriousViolations(page, "outcome (none)");
 
   await page.getByTestId("nav-evaluation").click();
-  await expect(page.getByTestId("eval-empty")).toBeVisible();
+  await expect(page.getByTestId(/^eval-(empty|results)$/)).toBeVisible();
   await seriousViolations(page, "evaluation");
 });
 

@@ -40,7 +40,8 @@ function findRatios(node: unknown, path: string[] = [], out: Ratio[] = []): Rati
   for (const [a, b] of pairs) {
     if (typeof o[a] === "number" && typeof o[b] === "number") {
       const label = typeof o.name === "string" ? o.name : typeof o.label === "string" ? o.label : typeof o.metric === "string" ? o.metric : path.join(".");
-      out.push({ path: label, numerator: o[a] as number, denominator: o[b] as number, extra: typeof o.note === "string" ? o.note : undefined });
+      const extra = [o.note, o.scope, o.evidence_mode].filter((x): x is string => typeof x === "string").join(" · ");
+      out.push({ path: label, numerator: o[a] as number, denominator: o[b] as number, extra: extra || undefined });
       return out;
     }
   }
@@ -64,10 +65,15 @@ export function Evaluation() {
   }, []);
 
   const noRun = data?.status === "no_run_yet";
-  const ratios = data && !noRun ? findRatios(data) : [];
+  const systems = data && !noRun && data.systems && typeof data.systems === "object" ? (data.systems as Record<string, unknown>) : {};
+  const overall = data && !noRun ? findRatios({ ...data, systems: undefined }) : [];
+  const perSystem = Object.entries(systems).map(([name, v]) => [name, findRatios(v)] as const);
+  const notRun = data ? stringList(data.systems_not_run) : [];
+  const suite = data?.test_suite as { tests?: number; failures?: number; errors?: number; skipped?: number } | undefined;
+  const ratios = [...overall, ...perSystem.flatMap(([, r]) => r)];
   const limitations = data ? [...stringList(data.limitations), ...stringList((data.summary as Record<string, unknown> | undefined)?.limitations)] : [];
   const meta = data && !noRun
-    ? (["status", "generated_at", "created_at", "release", "policy_version", "provider_mode", "model", "catalogue_sha256"] as const)
+    ? (["status", "schema_version", "generated_at", "created_at", "commit", "release", "policy_version", "provider_mode", "model", "scenarios_sha256", "catalogue_sha256"] as const)
         .filter((k) => data[k] !== undefined && typeof data[k] !== "object")
         .map((k) => [k, String(data[k])] as const)
     : [];
@@ -126,41 +132,25 @@ export function Evaluation() {
               {meta.map(([k, v]) => (
                 <div key={k}>
                   <dt>{k.replace(/_/g, " ")}</dt>
-                  <dd className={k.includes("sha") || k === "release" ? "mono" : ""}>{v}</dd>
+                  <dd className={k.includes("sha") || k === "release" || k === "commit" ? "mono" : ""}>{v}</dd>
                 </div>
               ))}
             </dl>
           ) : null}
-          {ratios.length ? (
-            <section className="card">
-              <h2 className="card-title">Results with denominators</h2>
-              <table className="ratios">
-                <thead>
-                  <tr>
-                    <th scope="col">Measure</th>
-                    <th scope="col">Count</th>
-                    <th scope="col">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ratios.map((r, i) => (
-                    <tr key={`${r.path}-${i}`}>
-                      <th scope="row">
-                        {humanize(r.path)}
-                        {r.extra ? <span className="muted small block">{r.extra}</span> : null}
-                      </th>
-                      <td className="num">
-                        {r.numerator} / {r.denominator}
-                      </td>
-                      <td className="num">{r.denominator ? `${((100 * r.numerator) / r.denominator).toFixed(1)}%` : "n/a (no cases)"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          ) : (
-            <p className="muted">The results file has no counts with denominators. See the raw file below.</p>
-          )}
+          {suite && typeof suite.tests === "number" ? (
+            <p className="suite-line" data-testid="eval-suite">
+              <Icon name={suite.failures || suite.errors ? "alert" : "checkCircle"} /> Backend test suite: {suite.tests} tests, {suite.failures ?? 0} failures,{" "}
+              {suite.errors ?? 0} errors, {suite.skipped ?? 0} skipped.
+            </p>
+          ) : null}
+          {overall.length ? <RatioTable title="Overall" rows={overall} /> : null}
+          {perSystem.map(([name, rows]) => (rows.length ? <RatioTable key={name} title={`System ${name.toUpperCase()}`} rows={rows} /> : null))}
+          {notRun.length ? (
+            <p className="muted" data-testid="eval-not-run">
+              <Icon name="info" size={18} /> Not run yet, so no numbers are shown for: {notRun.map((n) => n.toUpperCase()).join(", ")}.
+            </p>
+          ) : null}
+          {!ratios.length ? <p className="muted">The results file has no counts with denominators. See the raw file below.</p> : null}
           <section className="card">
             <h2 className="card-title">Limitations</h2>
             {limitations.length ? (
@@ -186,5 +176,36 @@ export function Evaluation() {
         </button>
       </div>
     </main>
+  );
+}
+
+function RatioTable({ title, rows }: { title: string; rows: Ratio[] }) {
+  return (
+    <section className="card">
+      <h2 className="card-title">{title}</h2>
+      <table className="ratios">
+        <thead>
+          <tr>
+            <th scope="col">Measure</th>
+            <th scope="col">Count</th>
+            <th scope="col">Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={`${r.path}-${i}`}>
+              <th scope="row">
+                {humanize(r.path)}
+                {r.extra ? <span className="muted small block">{r.extra}</span> : null}
+              </th>
+              <td className="num">
+                {r.numerator} / {r.denominator}
+              </td>
+              <td className="num">{r.denominator ? `${((100 * r.numerator) / r.denominator).toFixed(1)}%` : "n/a (no cases)"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

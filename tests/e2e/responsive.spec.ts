@@ -45,7 +45,7 @@ for (const [width, height] of [
     await expect(page.getByTestId("receipt-panel")).toBeVisible();
     await noHorizontalOverflow(page);
     await page.getByTestId("nav-evaluation").click();
-    await expect(page.getByTestId("eval-empty")).toBeVisible();
+    await expect(page.getByTestId(/^eval-(empty|results)$/)).toBeVisible();
     await noHorizontalOverflow(page);
   });
 }

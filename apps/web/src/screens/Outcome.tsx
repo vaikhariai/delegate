@@ -91,7 +91,9 @@ export function Outcome() {
       icon: "shieldCheck",
       tone: "ok",
       title: "Reserved in sandbox · Verified",
-      text: "The server read the reservation back and every field matches the exact action you approved.",
+      text: run.reservation?.status === "expired"
+        ? "Every field matched the exact action you approved when the server read it back. The hold has since expired."
+        : "The server read the reservation back and every field matches the exact action you approved.",
     },
     mismatch: {
       icon: "alert",

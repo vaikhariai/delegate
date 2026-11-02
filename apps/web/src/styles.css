@@ -2244,3 +2244,34 @@ input[aria-invalid="true"],
     scroll-behavior: auto !important;
   }
 }
+
+/* evaluation: test-suite line */
+.suite-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+.suite-line .icon {
+  color: var(--ok);
+}
+.ratios th[scope="row"] {
+  font-weight: 600;
+}
+.ratios th,
+.ratios td {
+  overflow-wrap: anywhere;
+}
+.card:has(> .ratios) {
+  overflow-x: auto;
+}
+@media (max-width: 767px) {
+  .ratios th,
+  .ratios td {
+    padding: 8px 4px;
+    font-size: 0.9rem;
+  }
+  .eval-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
