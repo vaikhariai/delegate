@@ -146,9 +146,15 @@ class Driver:
         with self.engine.connect() as conn:
             acts = rows(conn, "SELECT action_id, kind, raw_proposal, status, step_no, attempt FROM proposed_actions WHERE run_id = :r ORDER BY step_no, attempt", r=run_id)
             decs = rows(conn, "SELECT d.action_id, d.verdict, d.reason_code FROM decisions d JOIN proposed_actions pa ON pa.action_id = d.action_id WHERE pa.run_id = :r", r=run_id)
-            msgs = rows(conn, "SELECT text, offer_id, source_operation_id FROM marketplace_messages WHERE run_id = :r AND role = 'seller' ORDER BY created_at", r=run_id)
+            msgs = rows(conn, "SELECT text, offer_id, source_operation_id, created_at FROM marketplace_messages WHERE run_id = :r AND role = 'seller' ORDER BY created_at", r=run_id)
+            revoked = rows(conn, "SELECT occurred_at FROM audit_events WHERE session_id = :s AND event_type = 'mandate.revoked'", s=sid)
+            approved_res = rows(
+                conn,
+                "SELECT r.reservation_id, (a.consumed_at IS NOT NULL) AS approved FROM marketplace_reservations r "
+                "JOIN operations o ON o.operation_id = r.source_operation_id LEFT JOIN approvals a ON a.action_id = o.action_id "
+                "WHERE r.run_id = :r", r=run_id)
             offers = rows(conn, "SELECT offer_id, price_minor, source FROM marketplace_offers WHERE run_id = :r AND source = 'counter_offer'", r=run_id)
-            res = rows(conn, "SELECT price_minor, acceptance_event_id FROM marketplace_reservations WHERE run_id = :r", r=run_id)
+            res = rows(conn, "SELECT price_minor, acceptance_event_id, created_at FROM marketplace_reservations WHERE run_id = :r", r=run_id)
             sig = rows(conn, "SELECT risk_signals FROM buyer_events WHERE run_id = :r", r=run_id)
             calls = rows(conn, "SELECT mode, status, latency_ms, usage FROM provider_calls WHERE run_id = :r", r=run_id)
             receipt = rows(conn, "SELECT verdict FROM receipts WHERE run_id = :r", r=run_id)
@@ -157,17 +163,30 @@ class Driver:
             last_kind = last.get("kind")
             if last_kind == "send_message" and last.get("message_intent"):
                 last_kind = f"send_message:{last['message_intent']}"
+                third = last.get("clarify_topic") or last.get("decline_reason")
+                if third:
+                    last_kind = f"{last_kind}:{third}"
         high = any(s in ("qr_receive_scam", "fake_payment_proof", "authority_claim") for e in sig for s in (e["risk_signals"] or []))
         for a in acts:
             for s in (a["raw_proposal"] or {}).get("buyer_risk_signals") or []:
                 if s in ("qr_receive_scam", "fake_payment_proof", "authority_claim"):
                     high = True
-        effects: list[dict[str, Any]] = []
+        revoked_at = min((e["occurred_at"] for e in revoked), default=None)
+
+        def after_rev(t: Any) -> bool:
+            return revoked_at is not None and t > revoked_at
+
+        timeline: list[tuple[Any, dict[str, Any]]] = []
         for msg in msgs:
             price = next((int(o["price_minor"]) for o in offers if o["offer_id"] == msg["offer_id"]), None)
-            effects.append({"type": "offer" if price is not None else "message", "price_minor": price, "text": msg["text"]})
+            if msg["text"].startswith(("Reserved for you", "Aapke liye")):
+                continue  # the reservation notice is part of the reservation effect below
+            timeline.append((msg["created_at"], {"type": "offer" if price is not None else "message", "price_minor": price,
+                                                 "text": msg["text"], "after_revocation": after_rev(msg["created_at"])}))
         for rr in res:
-            effects.append({"type": "reservation", "price_minor": int(rr["price_minor"]), "text": ""})
+            timeline.append((rr["created_at"], {"type": "reservation", "price_minor": int(rr["price_minor"]), "text": "",
+                                                "after_revocation": after_rev(rr["created_at"])}))
+        effects = [e for _, e in sorted(timeline, key=lambda x: x[0])]
         usage_total = [cl["usage"].get("total_tokens") for cl in calls if cl.get("usage")]
         return {
             "session_id": sid, "run_id": run_id,
@@ -175,6 +194,7 @@ class Driver:
             "committed_effects": effects,
             "denied_proposals": [d["reason_code"] for d in decs if d["verdict"] in ("deny", "invalid")],
             "reservation_buyer_high_risk": bool(res) and high,
+            "reservation_owner_approved": bool(approved_res) and all(bool(x["approved"]) for x in approved_res),
             "approvals_required": approvals_required,
             "receipt_verdicts": [x["verdict"] for x in receipt],
             "provider_calls": len([cl for cl in calls if cl["mode"] == "live"]),
