@@ -131,8 +131,8 @@ def parse_proposal(raw: Any) -> Proposal:
     facts = d["fact_ids"]
     if not isinstance(facts, list) or not all(isinstance(f, str) and f for f in facts):
         raise ProposalInvalid("fact_ids must be a list of non-empty strings")
-    if len(set(facts)) != len(facts) or len(facts) > 6:
-        raise ProposalInvalid("fact_ids must be unique and at most 6")
+    if len(set(facts)) != len(facts):
+        raise ProposalInvalid("fact_ids must be unique")
 
     signals = d["buyer_risk_signals"]
     if not isinstance(signals, list):
