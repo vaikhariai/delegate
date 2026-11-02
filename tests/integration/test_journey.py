@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from delegate.clock import Clock
 from sqlalchemy import Engine
 
+from delegate.clock import Clock
 from tests.integration.helpers import Harness
 
 

@@ -13,6 +13,8 @@ import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any
 
+from delegate import risk
+from delegate.proposal import Proposal
 from mandate_gate import (
     ApprovalRecord,
     Check,
@@ -26,9 +28,6 @@ from mandate_gate import (
     deny,
     invalid,
 )
-
-from delegate import risk
-from delegate.proposal import Proposal
 
 POLICY_VERSION = "delegate-policy-v1"
 LIVE_RUN_STATES = frozenset({"created", "running", "awaiting_buyer", "waiting_approval", "blocked"})

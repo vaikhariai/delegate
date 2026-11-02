@@ -8,14 +8,14 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from delegate import executor, runtime, store
-from delegate.app import client_ip
-from delegate.clock import Clock
-from delegate.db import exe, one, rows, tx
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import OperationalError
 from starlette.requests import Request
 
+from delegate import executor, runtime, store
+from delegate.app import client_ip
+from delegate.clock import Clock
+from delegate.db import exe, one, rows, tx
 from tests.integration.helpers import Harness
 from tests.integration.test_authority_and_races import approve, reservations, to_pending_approval
 

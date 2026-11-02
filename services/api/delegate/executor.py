@@ -14,7 +14,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from mandate_gate import ApprovalRecord, ApprovalStatus, Decision, Verdict, canonical_bytes
 from sqlalchemy import Connection, Engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -33,6 +32,7 @@ from delegate.policy import (
 )
 from delegate.proposal import Proposal, ProposalInvalid, parse_proposal
 from delegate.renderers import format_money, render_message, render_reservation_notice
+from mandate_gate import ApprovalRecord, ApprovalStatus, Decision, Verdict, canonical_bytes
 
 Hook = Callable[[str, dict[str, Any]], None]
 _hooks: dict[str, Hook] = {}

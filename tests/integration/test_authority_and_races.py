@@ -11,12 +11,12 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from delegate import executor, runtime
-from delegate.clock import Clock
-from delegate.db import exe, one, rows, tx
 from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
 
+from delegate import executor, runtime
+from delegate.clock import Clock
+from delegate.db import exe, one, rows, tx
 from tests.integration.helpers import Harness
 
 
