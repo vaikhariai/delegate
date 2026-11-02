@@ -136,7 +136,10 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
             if current["state"] in ("completed", "failed", "cancelled", "paused"):
                 outcome = "run_not_live"
                 break
-            if int(current["provider_calls"]) >= settings.max_provider_calls_per_run:
+            sess = one(conn, "SELECT provider_calls FROM demo_sessions WHERE session_id = :s", s=session_id)
+            if int(current["provider_calls"]) >= settings.max_provider_calls_per_run or (
+                sess is not None and int(sess["provider_calls"]) >= settings.max_provider_calls_per_session
+            ):
                 outcome = "budget_exhausted"
                 break
             ctx = public_context(conn, session_id, run_id)
@@ -197,6 +200,11 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
         break
     with tx(engine) as conn:
         newer = one(conn, "SELECT 1 AS x FROM buyer_events WHERE run_id = :r AND created_at > :c", r=run_id, c=claimed_at)
+        if outcome == "budget_exhausted":
+            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = 'model_budget_exhausted', updated_at = :n WHERE run_id = :r AND fence = :f",
+                n=clock.now(), r=run_id, f=fence)
+            store.append_event(conn, clock, session_id, "run.state_changed", "system",
+                               "This demo negotiation used its model budget. Start a new scenario to continue.", run_id=run_id)
         if outcome in ("invalid", "denied"):
             exe(conn, "UPDATE runs SET state = 'blocked', state_reason = :why, updated_at = :n WHERE run_id = :r AND fence = :f "
                       "AND state IN ('running', 'awaiting_buyer')",

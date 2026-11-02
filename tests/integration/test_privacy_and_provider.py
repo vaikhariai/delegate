@@ -273,3 +273,22 @@ def test_strict_request_validation_and_error_envelope(mock_h: Harness) -> None:
         r = h.client.patch(f"/v1/mandates/{m['mandate_id']}", json=bad, headers=h.h(**{"If-Match": str(m["current_revision"])}))
         assert r.status_code == 422, bad
     assert h.client.get("/v1/demo-sessions/current").status_code == 401
+
+
+def test_run_budget_stops_the_agent_visibly(engine: Engine, real_clock: Clock, live_env: None) -> None:
+    fake = FakeMeta(lambda body, n: ok(json.dumps(proposal())))
+    settings = Settings(provider_mode="live", run_worker=False, web_dist="__none__", max_provider_calls_per_run=2)
+    h = Harness(engine, real_clock, settings, MetaAdapter(settings, transport=fake.transport()))
+    try:
+        h.new_session()
+        h.activate()
+        run_id = h.start_run()
+        for q in ("How much memory?", "And storage?"):
+            h.say(run_id, q)
+            assert h.step(run_id) == "succeeded"
+        h.say(run_id, "Battery?")
+        assert h.step(run_id) == "budget_exhausted"
+        assert h.run_view(run_id)["state"] == "blocked"
+        assert len(fake.requests) == 2
+    finally:
+        h.close()

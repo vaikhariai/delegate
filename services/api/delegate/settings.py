@@ -43,6 +43,7 @@ class Settings:
     mandate_lifetime_s: int = 30 * 60
     approval_lifetime_s: int = 120
     max_provider_calls_per_run: int = 24
+    max_provider_calls_per_session: int = 60
     max_provider_calls_per_step: int = 4
     max_previews_per_step: int = 2
     max_invalid_corrections: int = 2

@@ -289,7 +289,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     def _draft(p: store.Principal, goal: str | None, audio: bytes | None) -> dict[str, Any]:
         with eng().connect() as c:
             s = one(c, "SELECT provider_calls FROM demo_sessions WHERE session_id = :s", s=p.session_id)
-        if s and int(s["provider_calls"]) >= 60:
+        if s and int(s["provider_calls"]) >= settings.max_provider_calls_per_session:
             raise store.ApiError(429, "SESSION_QUOTA", "This demo session used its model quota. Start a new scenario.")
         adapter: MetaAdapter = state["adapter"]
         draft, calls = adapter.draft_mandate(goal, audio)
