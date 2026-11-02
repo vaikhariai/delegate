@@ -22,6 +22,6 @@ Known limits: repeated price previews or counters can let a persistent buyer inf
 
 ## Data
 
-All listing, people and prices are fictional (`fixtures/demo_case.json`). Visitors type buyer messages and may record a voice note for the mandate draft. Voice notes are sent to the Meta Model API (Standard mode) for that one request and are not stored by the application; the transcript returned by the model is shown to the owner and not persisted beyond the draft response. Sessions and all their rows are deleted on "Reset" or 24 hours after creation. Cloud Run request logs keep standard access logs per Google Cloud's default retention; the application does not log message contents.
+All listing, people and prices are fictional (`fixtures/demo_case.json`). Visitors type buyer messages and may record a voice note for the mandate draft. Voice notes are sent to the Meta Model API (Standard mode) for that one request and are not stored by the application; the transcript returned by the model is shown to the owner and not persisted beyond the draft response. Sessions and all their rows are deleted on "Reset" or 24 hours after creation. Google Cloud request logs for the service record client IP addresses and paths under Google Cloud's default retention; the application's own structured logs record timings, status codes and hashed session references, never message contents, tokens or private values (tested in `tests/integration/test_observability.py`).
 
 Do not enter real personal information in the demo.

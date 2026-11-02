@@ -47,8 +47,8 @@ export function useNow(intervalMs = 1000): number {
 
 // ------------------------------------------------------------------ tiny router (history API; the API serves index.html for any path)
 
-export type Route = "/" | "/setup" | "/negotiate" | "/outcome" | "/evaluation";
-const ROUTES: Route[] = ["/", "/setup", "/negotiate", "/outcome", "/evaluation"];
+export type Route = "/" | "/setup" | "/negotiate" | "/outcome" | "/evaluation" | "/privacy";
+const ROUTES: Route[] = ["/", "/setup", "/negotiate", "/outcome", "/evaluation", "/privacy"];
 const listeners = new Set<() => void>();
 
 function currentRoute(): Route {

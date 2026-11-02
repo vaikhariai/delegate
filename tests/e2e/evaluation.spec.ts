@@ -16,3 +16,10 @@ test("evaluation page shows the server's results with denominators, or an honest
   if (notRun.length) await expect(page.getByTestId("eval-not-run")).toContainText(notRun[0]!.toUpperCase());
   for (const l of ((latest.limitations as string[] | undefined) ?? []).slice(0, 2)) await expect(results).toContainText(l);
 });
+
+test("privacy page explains data handling and is linked from every screen", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("privacy-link").click();
+  await expect(page.getByTestId("privacy-page")).toContainText("deleted when you click Reset or 24 hours");
+  await expect(page.getByTestId("privacy-page")).toContainText("private minimum price is never sent");
+});

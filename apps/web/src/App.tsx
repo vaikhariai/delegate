@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 import { LiveRegion, Nav, Notices } from "./components/Chrome";
-import { useRoute } from "./lib";
+import { navigate, useRoute } from "./lib";
 import { Evaluation } from "./screens/Evaluation";
 import { Outcome } from "./screens/Outcome";
+import { Privacy } from "./screens/Privacy";
 import { Setup } from "./screens/Setup";
 import { Start } from "./screens/Start";
 import { Workspace } from "./screens/Workspace";
@@ -14,6 +15,7 @@ const TITLES: Record<string, string> = {
   "/negotiate": "Negotiation · Delegate",
   "/outcome": "Outcome and evidence · Delegate",
   "/evaluation": "Evaluation · Delegate",
+  "/privacy": "Privacy and data · Delegate",
 };
 
 function Screens() {
@@ -28,10 +30,15 @@ function Screens() {
         Skip to content
       </a>
       <Nav />
-      {route === "/setup" ? <Setup /> : route === "/negotiate" ? <Workspace /> : route === "/outcome" ? <Outcome /> : route === "/evaluation" ? <Evaluation /> : <Start />}
+      {route === "/setup" ? <Setup /> : route === "/negotiate" ? <Workspace /> : route === "/outcome" ? <Outcome /> : route === "/evaluation" ? <Evaluation /> : route === "/privacy" ? <Privacy /> : <Start />}
       <footer className="footer">
         <span>{meta?.sandbox_label ?? "Marketplace sandbox: fictional item, people and money."}</span>
-        <span className="mono">{meta?.release ? `release ${meta.release}` : ""}</span>
+        <span>
+          <a href="/privacy" data-testid="privacy-link" onClick={(e) => { e.preventDefault(); navigate("/privacy"); }}>
+            Privacy and data
+          </a>
+          <span className="mono">{meta?.release ? ` · release ${meta.release}` : ""}</span>
+        </span>
       </footer>
       <Notices />
       <LiveRegion />
