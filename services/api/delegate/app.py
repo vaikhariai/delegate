@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, text
 
-from delegate import executor, projections, store
+from delegate import executor, obs, projections, store
 from delegate.clock import Clock
 from delegate.db import exe, make_engine, migrate, one, tx
 from delegate.meta_adapter import MetaAdapter, ProviderError
@@ -100,7 +101,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        eng = engine or make_engine(settings.database_url, settings.pgdata_dir)
+        obs.configure()
+        eng = engine or make_engine(settings.database_url, settings.pgdata_dir, pool_size=20)
         migrate(eng)
         state["engine"] = eng
         state["adapter"] = adapter or MetaAdapter(settings)
@@ -109,7 +111,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         if run_worker:
             state["worker"] = Worker(eng, clock, settings, state["adapter"])
             state["worker"].start()
-        log.info("delegate started release=%s provider_mode=%s", state["release"], state["adapter"].mode)
+        log.info("delegate started", extra={"event": "startup", "release": state["release"], "provider_mode": state["adapter"].mode})
         yield
         if "worker" in state:
             state["worker"].stop()
@@ -148,10 +150,11 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     @app.middleware("http")
     async def request_id_and_headers(request: Request, call_next: Callable[[Request], Any]) -> Response:
         request.state.request_id = uuid.uuid4().hex[:16]
+        started = time.perf_counter()
         try:
             response: Response = await call_next(request)
         except Exception:
-            log.exception("unhandled error")
+            log.exception("unhandled error", extra={"event": "error", "request_id": request.state.request_id, "path": request.url.path})
             response = JSONResponse(status_code=500, content={"code": "INTERNAL", "message": "Something went wrong.", "retryable": True,
                                                               "request_id": request.state.request_id})
         response.headers["X-Request-Id"] = request.state.request_id
@@ -165,6 +168,13 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         response.headers["Permissions-Policy"] = "microphone=(self), camera=()"
         if request.url.path.startswith("/v1/"):
             response.headers["Cache-Control"] = "no-store"
+        if not request.url.path.startswith("/assets/"):
+            latency = round((time.perf_counter() - started) * 1000)
+            log.info("request", extra={
+                "event": "request", "request_id": request.state.request_id, "latency_ms": latency,
+                "httpRequest": {"requestMethod": request.method, "requestUrl": request.url.path, "status": response.status_code,
+                                "latency": f"{latency / 1000:.3f}s"},
+            })
         return response
 
     from fastapi.exceptions import RequestValidationError
@@ -212,6 +222,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     # ------------------------------------------------------------ health and meta
 
     @app.get("/healthz")
+    @app.get("/v1/health")  # Cloud Run's front end reserves /healthz, so probes and monitors use this path
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 

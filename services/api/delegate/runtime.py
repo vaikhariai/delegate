@@ -17,9 +17,9 @@ from typing import Any
 
 from sqlalchemy import Engine
 
-from delegate import executor, store
+from delegate import executor, obs, store
 from delegate.clock import Clock
-from delegate.db import exe, new_id, one, tx
+from delegate.db import exe, new_id, one, rows, tx
 from delegate.meta_adapter import PROMPT_VERSION, CallRecord, MetaAdapter, ProviderError
 from delegate.policy import ActionEnvelope, GateContext, evaluate, safe_message
 from delegate.projections import public_context
@@ -81,6 +81,13 @@ def _record_calls(engine: Engine, clock: Clock, run: dict[str, Any], step_no: in
                 c=last_id, s=run["session_id"], r=run["run_id"], st=step_no, pu=c.purpose, m=c.model, mo=c.mode, pv=c.prompt_version,
                 status=c.status, hs=c.http_status, lat=c.latency_ms, u=c.usage, rq=c.request_id, ec=c.error_code, n=clock.now(),
             )
+        for c in calls:
+            log.info("provider_call", extra={
+                "event": "provider_call", "session": obs.session_ref(run["session_id"]), "purpose": c.purpose, "model": c.model,
+                "mode": c.mode, "status": c.status, "http_status": c.http_status, "latency_ms": c.latency_ms,
+                "prompt_tokens": (c.usage or {}).get("prompt_tokens"), "completion_tokens": (c.usage or {}).get("completion_tokens"),
+                "request_id": c.request_id, "error_code": c.error_code,
+            })
         live = sum(1 for c in calls if c.mode == "live")
         exe(conn, "UPDATE runs SET provider_calls = provider_calls + :k WHERE run_id = :r", k=len(calls), r=run["run_id"])
         exe(conn, "UPDATE demo_sessions SET provider_calls = provider_calls + :k WHERE session_id = :s", k=live, s=run["session_id"])
@@ -243,6 +250,22 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
     return outcome
 
 
+def ops_summary(engine: Engine, clock: Clock) -> dict[str, Any]:
+    """Counts for dashboards and alerts: sessions, runs by state, provider calls, tokens and errors in the last hour."""
+    hour = clock.now() - dt.timedelta(hours=1)
+    with engine.connect() as conn:
+        s = one(conn, "SELECT count(*) AS n FROM demo_sessions WHERE expires_at > :n", n=clock.now())
+        by_state = {r["state"]: int(r["n"]) for r in rows(conn, "SELECT state, count(*) AS n FROM runs GROUP BY state")}
+        calls = one(conn, "SELECT count(*) FILTER (WHERE mode = 'live') AS live, count(*) FILTER (WHERE status <> 'ok') AS errors, "
+                          "COALESCE(sum((usage->>'prompt_tokens')::bigint), 0) AS prompt_tokens, "
+                          "COALESCE(sum((usage->>'completion_tokens')::bigint), 0) AS completion_tokens "
+                          "FROM provider_calls WHERE created_at > :h", h=hour)
+    assert s is not None and calls is not None
+    return {"active_sessions": int(s["n"]), "runs_by_state": by_state, "live_calls_last_hour": int(calls["live"]),
+            "provider_errors_last_hour": int(calls["errors"]), "prompt_tokens_last_hour": int(calls["prompt_tokens"]),
+            "completion_tokens_last_hour": int(calls["completion_tokens"])}
+
+
 class Worker:
     def __init__(self, engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapter, n_threads: int = 3) -> None:
         self.engine, self.clock, self.settings, self.adapter = engine, clock, settings, adapter
@@ -250,6 +273,7 @@ class Worker:
         self._threads = [threading.Thread(target=self._loop, args=(i,), daemon=True, name=f"delegate-worker-{i}") for i in range(n_threads)]
         self._last_cleanup = 0.0
         self._last_sweep = 0.0
+        self._last_stats = 0.0
 
     def start(self) -> None:
         for t in self._threads:
@@ -267,6 +291,9 @@ class Worker:
                 if idx == 0 and time.monotonic() - self._last_sweep > 10:
                     self._last_sweep = time.monotonic()
                     store.sweep(self.engine, self.clock)
+                if idx == 0 and time.monotonic() - self._last_stats > 60:
+                    self._last_stats = time.monotonic()
+                    log.info("ops_summary", extra={"event": "ops_summary", **ops_summary(self.engine, self.clock)})
                 if idx == 0 and time.monotonic() - self._last_cleanup > 600:
                     self._last_cleanup = time.monotonic()
                     store.cleanup_expired(self.engine, self.clock)
