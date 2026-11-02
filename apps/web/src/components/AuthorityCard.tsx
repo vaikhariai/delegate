@@ -37,7 +37,7 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
         notify("info", "Paused. The agent cannot send or reserve until you resume.");
       } else {
         announce("Agent resumed.");
-        notify("info", "Resumed. The agent replies to the next buyer message.");
+        notify("info", "Resumed. The agent now answers any buyer message that arrived while it was paused.");
       }
     } catch (err) {
       notifyError(err, `Could not ${action} the agent.`);

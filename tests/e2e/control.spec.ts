@@ -62,6 +62,9 @@ test("pause stops replies until resume", async ({ page }) => {
   await expect(page.getByTestId("msg-seller")).toHaveCount(0);
   await page.getByTestId("resume-button").click();
   await expect(page.getByTestId("authority-status")).toContainText("Active");
+  // The message that arrived while paused is answered once the agent resumes.
+  await expect(page.getByTestId("msg-seller")).toHaveCount(1, { timeout: 20_000 });
+  await expect(page.getByTestId("msg-seller").first()).toContainText("still available");
   const reply = await sendChipAndWait(page, "battery");
   expect(reply).toContain("Battery health is 87%");
 });
