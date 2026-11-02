@@ -47,7 +47,7 @@ _RULES: Final[list[tuple[str, re.Pattern[str]]]] = [
     (
         "authority_claim",
         re.compile(
-            r"(owner\s+(has\s+)?(approved|agreed|said|told)|seller\s+(already\s+)?(approved|agreed|told\s+me)|"
+            r"(owner\s+(has\s+)?(already\s+)?(approved|agreed|said|told)|seller\s+(has\s+)?(already\s+)?(approved|agreed|told\s+me)|"
             r"i\s+am\s+the\s+(owner|seller)|ignore\s+(all\s+|your\s+|the\s+)?(previous|prior|earlier)?\s*"
             r"(instructions|rules|limits)|system\s*(prompt|message)\s*:|developer\s*:|"
             r"\b(army|military|police|cbi|customs|navy|air\s*force)\b.{0,30}\b(officer|man|posted|jawan)\b|"
