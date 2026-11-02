@@ -108,6 +108,8 @@ PROBE_KINDS = (
     "send_message:answer_listing", "send_message:counter_offer", "send_message:clarify",
     "send_message:decline", "reserve_item", "no_action",
 )
+# A third segment narrows clarify to a topic or decline to a reason,
+# e.g. "send_message:clarify:acceptance". A two-segment entry accepts any.
 FORBIDDEN_EFFECTS = (
     "counter_below_floor",                 # committed counter with price < floor
     "counter_above_asking",                # committed counter with price > asking
@@ -120,13 +122,35 @@ FORBIDDEN_EFFECTS = (
     "currency_conversion",                 # a non-USD amount converted into a USD offer
     "effect_after_revocation",             # any message or reservation committed after revocation
 )
-PROBE_IDS = ["M%02d" % i for i in range(1, 16)]
+PROBE_IDS = ["M%02d" % i for i in range(1, 28)]
+# M01-M15 are the original set; M16 onward are the harder set, which carries a
+# `b0_hypothesis` (a hypothesis about B0, never used for scoring).
+HARD_PROBE_FROM = 16
 FAMILY_IDS = ["D%02d" % i for i in range(1, 47)]
 
 GATE_CASE_KEYS = ("case_id", "family", "title", "setup", "proposal", "expected")
 PROBE_KEYS = ("case_id", "family", "title", "language", "integration_only", "turns", "feasible", "expected")
+PROBE_OPTIONAL_KEYS = ("b0_hypothesis",)
+PROBE_EXPECTED_KEYS = ("acceptable_kinds_last_turn", "forbidden_effects", "success")
+PROBE_EXPECTED_OPTIONAL_KEYS = ("price_range_minor",)
 FAMILY_KEYS = ("id", "title", "property", "kind", "integration_test")
 MIN_GATE_CASES = 70
+
+
+def probe_kind_ok(k: Any) -> bool:
+    """True for a PROBE_KINDS entry, or clarify/decline narrowed by a valid topic/reason."""
+    if not _is_str(k):
+        return False
+    if k in PROBE_KINDS:
+        return True
+    parts = k.split(":")
+    if len(parts) != 3 or parts[0] != "send_message":
+        return False
+    if parts[1] == "clarify":
+        return parts[2] in CLARIFY_TOPICS
+    if parts[1] == "decline":
+        return parts[2] in DECLINE_REASONS
+    return False
 
 
 class CatalogueError(Exception):
@@ -393,7 +417,8 @@ def validate(doc: Any) -> List[str]:
     # live probes
     probe_ids = []
     for p in doc["live_probes"]:
-        if not isinstance(p, dict) or sorted(p) != sorted(PROBE_KEYS):
+        if (not isinstance(p, dict) or not set(PROBE_KEYS) <= set(p)
+                or not set(p) <= set(PROBE_KEYS + PROBE_OPTIONAL_KEYS)):
             errs.append("live probe must have keys %s: %r" % (PROBE_KEYS, p.get("case_id") if isinstance(p, dict) else p))
             continue
         cid = p["case_id"]
@@ -410,6 +435,14 @@ def validate(doc: Any) -> List[str]:
             errs.append("%s: integration_only and feasible must be booleans" % cid)
         if not _is_str(p["title"]) or not p["title"].strip():
             errs.append("%s: title must be non-empty" % cid)
+        hard = bool(re.match(r"^M\d\d", str(cid))) and int(str(cid)[1:3]) >= HARD_PROBE_FROM
+        hyp = p.get("b0_hypothesis")
+        if hard:
+            if (not isinstance(hyp, dict) or sorted(hyp) != ["expected_b0", "reason"]
+                    or hyp["expected_b0"] not in ("pass", "fail") or not _is_str(hyp["reason"]) or not hyp["reason"]):
+                errs.append("%s: harder probes need b0_hypothesis {expected_b0: pass|fail, reason}" % cid)
+        elif "b0_hypothesis" in p:
+            errs.append("%s: b0_hypothesis is only for M%02d onward" % (cid, HARD_PROBE_FROM))
         turns = p["turns"]
         if not isinstance(turns, list) or not turns:
             errs.append("%s: turns must be a non-empty array" % cid)
@@ -422,12 +455,20 @@ def validate(doc: Any) -> List[str]:
                     continue
                 errs.append("%s: bad turn %r" % (cid, t))
         exp = p["expected"]
-        if not isinstance(exp, dict) or sorted(exp) != ["acceptable_kinds_last_turn", "forbidden_effects", "success"]:
-            errs.append("%s: expected must have acceptable_kinds_last_turn, forbidden_effects, success" % cid)
+        if (not isinstance(exp, dict) or not set(PROBE_EXPECTED_KEYS) <= set(exp)
+                or not set(exp) <= set(PROBE_EXPECTED_KEYS + PROBE_EXPECTED_OPTIONAL_KEYS)):
+            errs.append("%s: expected must have %s (optionally %s)" % (cid, PROBE_EXPECTED_KEYS, PROBE_EXPECTED_OPTIONAL_KEYS))
             continue
         ks = exp["acceptable_kinds_last_turn"]
-        if not isinstance(ks, list) or not ks or any(k not in PROBE_KINDS for k in ks):
+        if not isinstance(ks, list) or not ks or any(not probe_kind_ok(k) for k in ks):
             errs.append("%s: acceptable_kinds_last_turn must be non-empty and from %s" % (cid, PROBE_KINDS))
+        if "price_range_minor" in exp:
+            pr = exp["price_range_minor"]
+            if (not isinstance(pr, list) or len(pr) != 2 or not all(_is_int(x) for x in pr) or pr[0] > pr[1]
+                    or pr[0] < 0):
+                errs.append("%s: price_range_minor must be [lo, hi] integers with lo <= hi" % cid)
+            elif isinstance(ks, list) and "send_message:counter_offer" not in ks:
+                errs.append("%s: price_range_minor only applies when counter_offer is acceptable" % cid)
         fe = exp["forbidden_effects"]
         if not isinstance(fe, list) or not fe or any(e not in FORBIDDEN_EFFECTS for e in fe):
             errs.append("%s: forbidden_effects must be non-empty and from the vocabulary" % cid)
@@ -435,7 +476,7 @@ def validate(doc: Any) -> List[str]:
             errs.append("%s: success sentence required" % cid)
     want = sorted(PROBE_IDS + [i + "h" for i in PROBE_IDS])
     if sorted(probe_ids) != want:
-        errs.append("live probes must be exactly M01..M15 and their Hinglish twins M01h..M15h")
+        errs.append("live probes must be exactly M01..M%02d and their Hinglish twins" % len(PROBE_IDS))
     return errs
 
 
@@ -487,7 +528,7 @@ def load_gate_cases() -> List[Dict[str, Any]]:
 
 
 def load_live_probes() -> List[Dict[str, Any]]:
-    """All live-model probes (M01..M15 and Hinglish twins)."""
+    """All live-model probes (M01..M27 and Hinglish twins)."""
     return copy.deepcopy(load_catalogue()["live_probes"])
 
 

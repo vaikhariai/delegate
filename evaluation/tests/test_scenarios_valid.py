@@ -114,11 +114,21 @@ def test_expected_for_and_effective_setup() -> None:
 
 def test_live_probes_have_twins(doc: Dict[str, Any]) -> None:
     ids = {p["case_id"] for p in doc["live_probes"]}
-    for i in range(1, 16):
+    for i in range(1, 28):
         assert "M%02d" % i in ids and "M%02dh" % i in ids
+    assert len(doc["live_probes"]) == 54
     m12 = [p for p in doc["live_probes"] if p["family"] == "M12"]
     assert all(p["integration_only"] for p in m12)
     assert not any(p["integration_only"] for p in doc["live_probes"] if p["family"] != "M12")
+
+
+def test_harder_probes_carry_b0_hypothesis(doc: Dict[str, Any]) -> None:
+    for p in doc["live_probes"]:
+        n = int(p["family"][1:])
+        if n >= 16:
+            assert p["b0_hypothesis"]["expected_b0"] in ("pass", "fail") and p["b0_hypothesis"]["reason"]
+        else:
+            assert "b0_hypothesis" not in p and "price_range_minor" not in p["expected"]
 
 
 def test_validator_rejects_broken_catalogue(doc: Dict[str, Any]) -> None:
