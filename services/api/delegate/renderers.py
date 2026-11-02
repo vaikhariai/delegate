@@ -85,7 +85,7 @@ def render_message(p: Proposal, public_facts: dict[str, str]) -> str:
     table = _HINGLISH if p.language == "hinglish" else _EN
     template = table[_key(p)]
     facts = [public_facts[f] for f in p.fact_ids]  # KeyError means the gate was bypassed
-    fact_text = "; ".join(facts)
+    fact_text = ". ".join(f[:1].upper() + f[1:] for f in facts)
     price = format_money(p.price_minor, p.currency) if p.price_minor is not None and p.currency else ""
     text = template.format(facts=fact_text, price=price)
     if p.message_intent != "answer_listing" and facts:
