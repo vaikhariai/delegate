@@ -178,6 +178,14 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         return response
 
     from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        codes = {404: ("NOT_FOUND", "Not found."), 405: ("METHOD_NOT_ALLOWED", "That method is not allowed here.")}
+        code, message = codes.get(exc.status_code, ("HTTP_ERROR", str(exc.detail)))
+        return JSONResponse(status_code=exc.status_code, content={"code": code, "message": message, "retryable": False,
+                                                                  "request_id": getattr(request.state, "request_id", None)})
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

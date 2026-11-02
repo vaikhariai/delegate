@@ -47,13 +47,13 @@ export function useNow(intervalMs = 1000): number {
 
 // ------------------------------------------------------------------ tiny router (history API; the API serves index.html for any path)
 
-export type Route = "/" | "/setup" | "/negotiate" | "/outcome" | "/evaluation" | "/privacy";
+export type Route = "/" | "/setup" | "/negotiate" | "/outcome" | "/evaluation" | "/privacy" | "/not-found";
 const ROUTES: Route[] = ["/", "/setup", "/negotiate", "/outcome", "/evaluation", "/privacy"];
 const listeners = new Set<() => void>();
 
 function currentRoute(): Route {
   const p = window.location.pathname.replace(/\/+$/, "") || "/";
-  return (ROUTES as string[]).includes(p) ? (p as Route) : "/";
+  return (ROUTES as string[]).includes(p) ? (p as Route) : "/not-found";
 }
 
 window.addEventListener("popstate", () => listeners.forEach((l) => l()));

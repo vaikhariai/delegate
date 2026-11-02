@@ -23,3 +23,10 @@ test("privacy page explains data handling and is linked from every screen", asyn
   await expect(page.getByTestId("privacy-page")).toContainText("deleted when you click Reset or 24 hours");
   await expect(page.getByTestId("privacy-page")).toContainText("private minimum price is never sent");
 });
+
+test("unknown pages show a not-found screen with a way back", async ({ page }) => {
+  await page.goto("/no-such-page");
+  await expect(page.getByTestId("not-found-page")).toBeVisible();
+  await page.getByTestId("not-found-home").click();
+  await expect(page.getByTestId("start-button")).toBeVisible();
+});

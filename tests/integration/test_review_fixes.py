@@ -254,3 +254,8 @@ def test_asking_price_is_fixed_after_activation(h: Harness) -> None:
     assert r.status_code == 422 and r.json()["code"] == "ASKING_PRICE_FIXED"
     with h.engine.connect() as c:
         assert rows(c, "SELECT 1 FROM listings WHERE asking_price_minor = 62000")
+
+
+def test_unknown_api_route_returns_the_error_envelope(h: Harness) -> None:
+    r = h.client.get("/v1/no-such-route")
+    assert r.status_code == 404 and set(r.json()) == {"code", "message", "retryable", "request_id"} and r.json()["code"] == "NOT_FOUND"
