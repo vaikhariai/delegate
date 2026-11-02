@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Engine
 
-from delegate import executor, obs, store
+from delegate import executor, obs, signals, store
 from delegate.clock import Clock
 from delegate.db import exe, new_id, one, rows, tx
 from delegate.meta_adapter import PROMPT_VERSION, CallRecord, MetaAdapter, ProviderError
@@ -281,6 +281,8 @@ class Worker:
 
     def stop(self) -> None:
         self._stop.set()
+        for _ in self._threads:
+            signals.notify_work()
         for t in self._threads:
             t.join(timeout=5)
 
@@ -299,7 +301,7 @@ class Worker:
                     store.cleanup_expired(self.engine, self.clock)
                 run = claim(self.engine, self.clock, worker_id)
                 if run is None:
-                    self._stop.wait(0.25)
+                    signals.wait_for_work(2.0)  # woken on new buyer input; the timeout is a fallback poll
                     continue
                 process(self.engine, self.clock, self.settings, self.adapter, run)
             except Exception:  # noqa: BLE001 - a worker must survive any single failure

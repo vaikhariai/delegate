@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, text
 
-from delegate import executor, obs, projections, store
+from delegate import executor, obs, projections, signals, store
 from delegate.clock import Clock
 from delegate.db import exe, make_engine, migrate, one, tx
 from delegate.meta_adapter import MetaAdapter, ProviderError
@@ -314,14 +314,18 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     @app.post("/v1/mandates/{mandate_id}/activate")
     def activate(mandate_id: str, body: ActivateBody, p: store.Principal = Depends(principal)) -> dict[str, Any]:
         _check_mandate(p, mandate_id)
-        return store.activate(eng(), clock, p, body.revision, settings.mandate_lifetime_s)
+        out = store.activate(eng(), clock, p, body.revision, settings.mandate_lifetime_s)
+        signals.notify_work()
+        return out
 
     @app.post("/v1/mandates/{mandate_id}/{action}")
     def mandate_action(mandate_id: str, action: str, p: store.Principal = Depends(principal)) -> dict[str, Any]:
         if action not in ("pause", "resume", "revoke"):
             raise store.ApiError(404, "NOT_FOUND", "Unknown action.")
         _check_mandate(p, mandate_id)
-        return store.set_status(eng(), clock, p, action)
+        out = store.set_status(eng(), clock, p, action)
+        signals.notify_work()
+        return out
 
     @app.post("/v1/mandate-drafts")
     def draft_text(body: DraftBody, p: store.Principal = Depends(principal)) -> dict[str, Any]:
@@ -368,13 +372,13 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     def buyer_turn(run_id: str, body: BuyerTurnBody, p: store.Principal = Depends(principal),
                    idempotency_key: str | None = Header(default=None)) -> JSONResponse:
         return idempotent(p, idempotency_key, f"buyer-turns:{run_id}",
-                          lambda: store.buyer_turn(eng(), clock, p, run_id, body.text, settings.max_buyer_turns_per_run), 202,
+                          lambda: _woke(store.buyer_turn(eng(), clock, p, run_id, body.text, settings.max_buyer_turns_per_run)), 202,
                           body=body.model_dump())
 
     @app.post("/v1/runs/{run_id}/accept-offer", status_code=202)
     def accept(run_id: str, body: AcceptBody, p: store.Principal = Depends(principal),
                idempotency_key: str | None = Header(default=None)) -> JSONResponse:
-        return idempotent(p, idempotency_key, f"accept:{run_id}", lambda: store.accept_offer(eng(), clock, p, run_id, body.offer_id), 202,
+        return idempotent(p, idempotency_key, f"accept:{run_id}", lambda: _woke(store.accept_offer(eng(), clock, p, run_id, body.offer_id)), 202,
                           body=body.model_dump())
 
     @app.post("/v1/runs/{run_id}/resume", status_code=202)
@@ -386,6 +390,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
             exe(c, "UPDATE runs SET state = 'running', state_reason = NULL, needs_step = true, last_feedback = NULL, updated_at = :n WHERE run_id = :r",
                 n=clock.now(), r=run_id)
             store.append_event(c, clock, p.session_id, "run.state_changed", "owner", "You asked the agent to retry.", run_id=run_id)
+        signals.notify_work()
         return {"run_id": run_id, "state": "running"}
 
     @app.post("/v1/approvals/{approval_id}/resolve")
@@ -479,6 +484,11 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
 
 FACT_TOPIC_TO_ID = {"model": "f_model", "memory": "f_memory", "storage": "f_storage", "condition": "f_condition", "battery": "f_battery",
                     "charger": "f_charger", "pickup": "f_pickup", "payment": "f_payment", "availability": "f_availability"}
+
+
+def _woke(result: dict[str, Any]) -> dict[str, Any]:
+    signals.notify_work()
+    return result
 
 
 def _normalize_draft(draft: dict[str, Any], mode: str, model: str | None) -> dict[str, Any]:
