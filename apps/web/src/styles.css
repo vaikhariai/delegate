@@ -1283,7 +1283,6 @@ input[aria-invalid="true"],
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   font-size: 0.92rem;
-  flex-wrap: wrap;
 }
 .mini-listing .icon {
   color: var(--accent);
@@ -1291,6 +1290,10 @@ input[aria-invalid="true"],
 .mini-title {
   font-weight: 600;
   min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mini-price {
   font-weight: 760;
@@ -2154,6 +2157,16 @@ input[aria-invalid="true"],
   .authority-controls .btn {
     min-height: 44px;
     padding: 0 12px;
+  }
+  .authority-controls .btn-secondary {
+    width: 44px;
+    padding: 0;
+  }
+  .authority-controls .ctl-label {
+    display: none;
+  }
+  .authority-status {
+    flex: 1;
   }
   .chat-head,
   .mini-listing {

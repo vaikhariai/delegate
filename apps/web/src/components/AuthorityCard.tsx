@@ -13,17 +13,19 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
   const now = useNow();
   const [busy, setBusy] = useState<"pause" | "resume" | "revoke" | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [confirmedRevokeAt, setConfirmedRevokeAt] = useState<string | null>(null);
   const t = mandate.active_terms ?? mandate.terms;
   const left = remaining(mandate.expires_at, now);
   const ended = mandate.status === "revoked" || mandate.status === "expired";
   const revokedEvent = [...events].reverse().find((e) => e.type === "mandate.revoked");
-  const revokedAt = (revokedEvent?.data?.revoked_at as string | undefined) ?? revokedEvent?.at;
+  const revokedAt = confirmedRevokeAt ?? (revokedEvent?.data?.revoked_at as string | undefined) ?? revokedEvent?.at;
   const facts = listing.public_facts.filter((f) => t.allowed_public_fact_ids.includes(f.id));
 
   async function act(action: "pause" | "resume" | "revoke") {
     setBusy(action);
     try {
       const r = await api.mandateAction(mandate.mandate_id, action);
+      if (action === "revoke" && r.revoked_at) setConfirmedRevokeAt(r.revoked_at);
       await refreshSession();
       await refreshRun();
       if (action === "revoke") {
@@ -60,15 +62,15 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
             <span data-testid="authority-revision">Revision {mandate.active_revision ?? mandate.current_revision}</span>
             {mandate.status === "active" || mandate.status === "paused" ? (
               <span className={left !== null && left < 120 ? "urgent" : ""} data-testid="authority-expiry">
-                <Icon name="clock" size={16} /> {mmss(left)} left
+                <Icon name="clock" size={16} /> {left === 0 ? "time is up" : `${mmss(left)} left`}
               </span>
             ) : null}
           </span>
         </div>
         <div className="authority-controls" role="group" aria-label="Agent controls">
           {mandate.status === "paused" ? (
-            <button type="button" className="btn btn-secondary" onClick={() => void act("resume")} disabled={busy !== null} data-testid="resume-button">
-              <Icon name="play" size={18} /> {busy === "resume" ? "Resuming…" : "Resume"}
+            <button type="button" className="btn btn-secondary" onClick={() => void act("resume")} disabled={busy !== null} aria-label="Resume" data-testid="resume-button">
+              <Icon name="play" size={18} /> <span className="ctl-label">{busy === "resume" ? "Resuming…" : "Resume"}</span>
             </button>
           ) : (
             <button
@@ -76,9 +78,10 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
               className="btn btn-secondary"
               onClick={() => void act("pause")}
               disabled={busy !== null || mandate.status !== "active"}
+              aria-label="Pause"
               data-testid="pause-button"
             >
-              <Icon name="pause" size={18} /> {busy === "pause" ? "Pausing…" : "Pause"}
+              <Icon name="pause" size={18} /> <span className="ctl-label">{busy === "pause" ? "Pausing…" : "Pause"}</span>
             </button>
           )}
           <button type="button" className="btn btn-danger" onClick={() => setConfirming(true)} disabled={busy !== null || ended} data-testid="revoke-button">
@@ -89,7 +92,7 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
 
       {mandate.status === "revoked" ? (
         <p className="revoked-line" role="status" data-testid="revoked-confirmation">
-          <Icon name="revoke" size={18} /> Revoked at {clockTime(revokedAt, true)} · confirmed by the server. No further messages or reservations.
+          <Icon name="revoke" size={18} /> {revokedAt ? `Revoked at ${clockTime(revokedAt, true)} · confirmed by the server.` : "Revoked · confirmed by the server."} No further messages or reservations.
         </p>
       ) : mandate.status === "expired" ? (
         <p className="revoked-line" role="status">
