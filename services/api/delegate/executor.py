@@ -405,7 +405,16 @@ def _execute_tx(
                 tk=f"{p.message_intent}.{p.clarify_topic or p.decline_reason or ''}".rstrip("."), lang=p.language, o=offer_id, n=clock.now(),
             )
             result = {"kind": "send_message", "message_id": message_id, "offer_id": offer_id, "text": text}
-            new_state = "awaiting_buyer"
+            pending = one(conn, "SELECT 1 AS x FROM approvals WHERE run_id = :r AND status = 'pending'", r=run["run_id"])
+            new_state = "waiting_approval" if pending and p.message_intent != "counter_offer" else "awaiting_buyer"
+            if p.message_intent == "counter_offer" and pending:
+                # A new counter replaces the accepted offer, so the pending reservation no longer matches anything.
+                exe(conn, "UPDATE approvals SET status = 'cancelled', resolved_at = :n WHERE run_id = :r AND status = 'pending'",
+                    n=clock.now(), r=run["run_id"])
+                exe(conn, "UPDATE proposed_actions SET status = 'cancelled' WHERE run_id = :r AND status = 'waiting_approval'", r=run["run_id"])
+                store.append_event(conn, clock, session_id, "approval.cancelled", "system",
+                                   "Pending approval cancelled: the agent made a new offer, so the accepted terms changed.",
+                                   run_id=run["run_id"], owner_only=True)
         else:  # reserve_item
             assert p.price_minor is not None and p.currency is not None and p.acceptance_event_id is not None
             acc = one(conn, "SELECT * FROM buyer_events WHERE event_id = :e", e=p.acceptance_event_id)

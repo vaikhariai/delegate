@@ -380,3 +380,12 @@ def test_session_creation_is_rate_limited(engine: Engine, real_clock: Clock) -> 
         assert r.status_code == 429 and r.json()["code"] == "RATE_LIMITED"
     finally:
         hh.close()
+
+
+def test_buyer_message_while_approval_pending_keeps_or_cancels_honestly(h: Harness) -> None:
+    st = to_pending_approval(h)
+    h.say(st["run_id"], "Great, how much memory does it have again?")
+    assert h.step(st["run_id"]) == "succeeded"
+    v = h.run_view(st["run_id"])
+    assert v["state"] == "waiting_approval" and v["pending_approval"] is not None
+    assert approve(h, v["pending_approval"]).json()["receipt_verdict"] == "verified"
