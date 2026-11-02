@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, text
 
-from delegate import budget, executor, obs, projections, signals, store
+from delegate import budget, executor, lab, obs, projections, signals, store
 from delegate.clock import Clock
 from delegate.db import exe, make_engine, migrate, one, tx
 from delegate.meta_adapter import MetaAdapter, ProviderError
@@ -67,6 +67,12 @@ class ActivateBody(Strict):
 class ResolveBody(Strict):
     decision: str
     action_hash: str
+
+
+class LabEvalBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: str = Field(max_length=40)
+    proposal: Any
 
 
 class DraftBody(Strict):
@@ -487,6 +493,26 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
                 await asyncio.sleep(0.5)
 
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @app.get("/v1/lab/cases")
+    def lab_cases() -> dict[str, Any]:
+        return lab.list_cases()
+
+    @app.get("/v1/lab/cases/{case_id}")
+    def lab_case(case_id: str) -> dict[str, Any]:
+        c = lab.get_case(case_id)
+        if c is None:
+            raise store.ApiError(404, "NOT_FOUND", "No such case.")
+        return c
+
+    @app.post("/v1/lab/evaluate")
+    def lab_evaluate(body: LabEvalBody, request: Request) -> dict[str, Any]:
+        if int(request.headers.get("content-length") or 0) > 20_000:
+            raise store.ApiError(413, "BODY_SIZE", "Keep lab proposals under 20 KB.")
+        r = lab.evaluate_edited(body.case_id, body.proposal)
+        if r is None:
+            raise store.ApiError(404, "NOT_FOUND", "No such case.")
+        return r
 
     @app.get("/v1/evaluations/latest")
     def evaluation_latest() -> JSONResponse:

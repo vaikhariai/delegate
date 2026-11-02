@@ -17,7 +17,7 @@ COPY packages/ ./packages/
 COPY services/ ./services/
 COPY migrations/ ./migrations/
 COPY fixtures/ ./fixtures/
-COPY evaluation/RESULTS.json* ./evaluation/
+COPY evaluation/RESULTS.json* evaluation/scenarios.json evaluation/scenarios.sha256 evaluation/oracle.py evaluation/gate_harness.py ./evaluation/
 RUN uv sync --frozen --no-dev --no-editable && rm -rf /root/.cache
 COPY --from=web /web/dist ./apps/web/dist
 RUN useradd --create-home --uid 10001 delegate && chown -R delegate /srv
