@@ -180,22 +180,21 @@ class GateContext:
     approval: ApprovalRecord | None = None
 
 
-A, M, C = ActionEnvelope, MandateSnapshot, GateContext
 
 
-def _schema(a: A, m: M, c: C) -> Outcome | None:
+def _schema(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     if a.proposal is None:
         return invalid("SCHEMA_INVALID", a.validation_error or "")
     return None
 
 
-def _scope(a: A, m: M, c: C) -> Outcome | None:
+def _scope(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     if a.session_id != c.auth_session_id or a.run_id != c.run_id or a.item_id != c.item_id:
         return deny("OUT_OF_SCOPE")
     return None
 
 
-def _fence(a: A, m: M, c: C) -> Outcome | None:
+def _fence(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     if not c.fence_current:
         return deny("FENCE_STALE")
     if c.run_state not in LIVE_RUN_STATES:
@@ -203,7 +202,7 @@ def _fence(a: A, m: M, c: C) -> Outcome | None:
     return None
 
 
-def _authority(a: A, m: M, c: C) -> Outcome | None:
+def _authority(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     if m.status == "revoked":
         return deny("MANDATE_REVOKED")
     if m.status == "paused":
@@ -219,7 +218,7 @@ def _authority(a: A, m: M, c: C) -> Outcome | None:
     return None
 
 
-def _allowed(a: A, m: M, c: C) -> Outcome | None:
+def _allowed(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     p = a.proposal
     assert p is not None
     if p.kind == "no_action":
@@ -233,7 +232,7 @@ def _allowed(a: A, m: M, c: C) -> Outcome | None:
     return None
 
 
-def _money(a: A, m: M, c: C) -> Outcome | None:
+def _money(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     p = a.proposal
     assert p is not None
     if p.price_minor is None:
@@ -246,7 +245,7 @@ def _money(a: A, m: M, c: C) -> Outcome | None:
     return None
 
 
-def _terms(a: A, m: M, c: C) -> Outcome | None:
+def _terms(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     p = a.proposal
     assert p is not None
     if any(f not in m.allowed_public_fact_ids for f in p.fact_ids):
@@ -265,7 +264,7 @@ def _terms(a: A, m: M, c: C) -> Outcome | None:
     return None
 
 
-def _acceptance(a: A, m: M, c: C) -> Outcome | None:
+def _acceptance(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     p = a.proposal
     assert p is not None
     if p.kind != "reserve_item":
@@ -283,11 +282,11 @@ def _acceptance(a: A, m: M, c: C) -> Outcome | None:
     return None
 
 
-def _duplicate(a: A, m: M, c: C) -> Outcome | None:
+def _duplicate(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     return allow_with("DUPLICATE") if c.committed_operation else None
 
 
-def _approval(a: A, m: M, c: C) -> Outcome | None:
+def _approval(a: ActionEnvelope, m: MandateSnapshot, c: GateContext) -> Outcome | None:
     p = a.proposal
     assert p is not None
     if p.kind != "reserve_item" or not m.reservation_requires_owner_approval:

@@ -92,7 +92,10 @@ def persist_proposal(
     except ProposalInvalid as exc:
         proposal, error = None, str(exc)
     with tx(engine) as conn:
-        run = store.get_run(conn, session_id, run_id)
+        run = store.get_run(conn, session_id, run_id, for_update=True)
+        prev = one(conn, "SELECT COALESCE(max(attempt), 0) AS a FROM proposed_actions WHERE run_id = :r AND step_no = :st",
+                   r=run_id, st=step_no)
+        attempt = int(prev["a"]) + 1 if prev else attempt
         m = store.mandate_row(conn, session_id)
         snap = store.snapshot(conn, m)
         now = clock.now()
@@ -120,7 +123,12 @@ def persist_proposal(
         if isinstance(raw, (dict, list)):
             raw_json = raw
         else:
-            raw_json = {"unparsed": str(raw)[:2000]}
+            try:
+                raw_json = json.loads(raw)
+                if not isinstance(raw_json, (dict, list)):
+                    raw_json = {"unparsed": str(raw)[:2000]}
+            except (TypeError, ValueError):
+                raw_json = {"unparsed": str(raw)[:2000]}
         exe(
             conn,
             "INSERT INTO proposed_actions (action_id, session_id, run_id, step_no, attempt, origin, kind, raw_proposal, "
@@ -294,6 +302,7 @@ def _execute_tx(
     principal: str,
 ) -> tuple[ExecResult, str | None]:
     verify_op: str | None = None
+    _hook("before_locks", {"action_id": action_id, "session_id": session_id})
     with tx(engine) as conn:
         m = store.mandate_row(conn, session_id, for_update=True)
         listing = one(conn, "SELECT * FROM listings WHERE session_id = :s AND item_id = :i FOR UPDATE", s=session_id, i=m["item_id"])
@@ -437,7 +446,7 @@ def _execute_tx(
         exe(conn, "UPDATE runs SET state = :st, last_feedback = NULL, updated_at = :n WHERE run_id = :r", st=new_state, n=clock.now(), r=run["run_id"])
         if p.kind == "send_message":
             store.append_event(
-                conn, clock, session_id, "operation.committed", "executor", "Sent to buyer: " + result["text"],
+                conn, clock, session_id, "operation.committed", "executor", f"Sent to buyer: {text}",
                 run_id=run["run_id"], object_id=operation_id, data={**result, "action_id": action_id},
             )
         else:

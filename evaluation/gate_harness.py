@@ -18,10 +18,9 @@ sys.path.insert(0, str(ROOT / "services" / "api"))
 sys.path.insert(0, str(ROOT / "evaluation"))
 
 import oracle  # noqa: E402
-from mandate_gate import ApprovalRecord, ApprovalStatus  # noqa: E402
-
 from delegate.policy import AcceptanceSnap, ActionEnvelope, GateContext, MandateSnapshot, OfferSnap, evaluate  # noqa: E402
 from delegate.proposal import ProposalInvalid, parse_proposal  # noqa: E402
+from mandate_gate import ApprovalRecord, ApprovalStatus  # noqa: E402
 
 NOW = dt.datetime(2026, 11, 3, 10, 0, tzinfo=dt.timezone.utc)
 SESSION, RUN, ITEM, OWNER = "ses_case", "run_case", "laptop-1", "owner:ses_case"

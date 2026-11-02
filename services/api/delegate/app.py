@@ -370,9 +370,9 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
             idle = 0.0
             yield b"retry: 2000\n\n"
             while not await request.is_disconnected():
-                def fetch() -> list[dict[str, Any]]:
+                def fetch(after_seq: int = cursor) -> list[dict[str, Any]]:
                     with eng().connect() as c2:
-                        return projections.events(c2, p.session_id, cursor, run_id=run_id, owner=True)
+                        return projections.events(c2, p.session_id, after_seq, run_id=run_id, owner=True)
                 evs = await run_in_threadpool(fetch)
                 for e in evs:
                     cursor = e["seq"]

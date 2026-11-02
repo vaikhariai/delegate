@@ -27,7 +27,7 @@ def embedded_url(pgdata_dir: str) -> str:
     path = str(Path(pgdata_dir).resolve())
     Path(path).mkdir(parents=True, exist_ok=True)
     if path not in _servers:
-        _servers[path] = pgserver.get_server(path, cleanup_mode="stop")
+        _servers[path] = pgserver.get_server(path, cleanup_mode="stop")  # type: ignore[attr-defined]
     uri: str = _servers[path].get_uri()
     return uri.replace("postgresql://", "postgresql+psycopg://", 1)
 

@@ -40,7 +40,8 @@ build-backend = "hatchling.build"
 packages = ["services/api/delegate"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/mandate_gate/tests"]
+testpaths = ["tests", "packages/mandate_gate/tests", "evaluation/tests"]
+asyncio_default_fixture_loop_scope = "function"
 addopts = "-q"
 asyncio_mode = "auto"
 
@@ -57,3 +58,7 @@ ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I"]
+ignore = ["E501", "B008"]

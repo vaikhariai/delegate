@@ -164,7 +164,7 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
                 time.sleep(min(4.0, 0.8 * 2 ** transient_retries))
                 continue
             with tx(engine) as conn:
-                n = exe(conn, "UPDATE runs SET state = 'blocked', state_reason = :why, needs_step = false, updated_at = :n "
+                n = exe(conn, "UPDATE runs SET state = 'blocked', state_reason = :why, needs_step = false, lease_owner = NULL, lease_until = NULL, updated_at = :n "
                               "WHERE run_id = :r AND fence = :f AND state NOT IN ('completed', 'failed', 'cancelled')",
                         why=exc.code.lower(), n=clock.now(), r=run_id, f=fence)
                 if n:

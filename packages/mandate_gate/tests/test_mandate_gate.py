@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from mandate_gate import (
     ApprovalRecord,
     ApprovalStatus,
