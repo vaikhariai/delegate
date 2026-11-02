@@ -29,11 +29,13 @@ export function ModeChip({ compact = false }: { compact?: boolean }) {
   );
 }
 
-const LINKS: { to: Route; label: string; testid: string }[] = [
-  { to: "/setup", label: "Mandate", testid: "nav-setup" },
-  { to: "/negotiate", label: "Negotiation", testid: "nav-negotiate" },
-  { to: "/outcome", label: "Outcome", testid: "nav-outcome" },
-  { to: "/evaluation", label: "Evaluation", testid: "nav-evaluation" },
+// `short` is shown below 600 px so every item fits on a phone without a hidden scroll; it is also the accessible name there.
+const LINKS: { to: Route; label: string; short: string; testid: string }[] = [
+  { to: "/setup", label: "Mandate", short: "Mandate", testid: "nav-setup" },
+  { to: "/negotiate", label: "Negotiation", short: "Negotiate", testid: "nav-negotiate" },
+  { to: "/outcome", label: "Outcome", short: "Outcome", testid: "nav-outcome" },
+  { to: "/evaluation", label: "Evaluation", short: "Eval", testid: "nav-evaluation" },
+  { to: "/lab", label: "Gate lab", short: "Lab", testid: "nav-lab" },
 ];
 
 export function Nav() {
@@ -66,7 +68,8 @@ export function Nav() {
                 navigate(l.to);
               }}
             >
-              {l.label}
+              <span className="lbl-long">{l.label}</span>
+              <span className="lbl-short">{l.short}</span>
             </a>
           ))}
         </nav>

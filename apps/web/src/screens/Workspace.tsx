@@ -109,6 +109,51 @@ export function Workspace() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [buyer?.conversation.length]);
 
+  // Below 1024 px the reply and the Accept bar can land below the fold. Bring them into view when they arrive, but only if the
+  // user is already following the end of the conversation or has just sent something; never yank someone reading older messages.
+  const followRef = useRef(true);
+  const justActedAt = useRef(0);
+  const hasBuyer = buyer !== null;
+  useEffect(() => {
+    const log = logRef.current;
+    const update = () => {
+      const el = logRef.current;
+      if (!el) return;
+      const innerNear = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      followRef.current = innerNear && el.getBoundingClientRect().bottom <= window.innerHeight + 200;
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    log?.addEventListener("scroll", update, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", update);
+      log?.removeEventListener("scroll", update);
+    };
+  }, [hasBuyer]);
+
+  const sellerMessages = (buyer?.conversation ?? []).filter((m) => m.role === "seller");
+  const lastSellerSeq = sellerMessages.length ? sellerMessages[sellerMessages.length - 1]!.seq : 0;
+  const openOfferId = buyer?.open_offer?.offer_id ?? null;
+  const firstSeen = useRef(true);
+  useEffect(() => {
+    if (firstSeen.current) {
+      // Do not scroll on the initial load of an existing conversation.
+      if (hasBuyer) firstSeen.current = false;
+      return;
+    }
+    if (window.innerWidth >= 1024 || tab !== "chat") return;
+    const recent = Date.now() - justActedAt.current < 60_000;
+    if (!followRef.current && !recent) return;
+    const target =
+      document.querySelector<HTMLElement>("[data-testid=offer-bar]") ??
+      document.querySelector<HTMLElement>("[data-testid=negotiation-ended]") ??
+      Array.from(document.querySelectorAll<HTMLElement>("[data-testid=msg-seller]")).pop() ??
+      null;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    target?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSellerSeq, openOfferId]);
+
   const working = useMemo(() => (run ? agentWorking(events, run.thinking) : null), [events, run]);
   const pending = run?.pending_approval ?? null;
   const drawerOpen = pending !== null && dismissedApproval !== pending.approval_id && mandate?.status === "active";
@@ -119,6 +164,7 @@ export function Workspace() {
 
   async function send(body: string) {
     if (!runId || !body.trim()) return;
+    justActedAt.current = Date.now();
     setSending(true);
     try {
       await api.buyerTurn(runId, body.trim(), newKey());
@@ -136,6 +182,7 @@ export function Workspace() {
 
   async function accept() {
     if (!runId || !open) return;
+    justActedAt.current = Date.now();
     setAccepting(true);
     try {
       await api.acceptOffer(runId, open.offer_id, `accept-${open.offer_id}`);

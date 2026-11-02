@@ -3,6 +3,9 @@ import type {
   BuyerView,
   DelegateEvent,
   DraftResult,
+  LabCase,
+  LabCaseList,
+  LabEvaluation,
   Meta,
   OwnerRunView,
   SessionState,
@@ -129,6 +132,10 @@ export const api = {
   events: (runId: string, after: number, signal?: AbortSignal) =>
     request<{ events: DelegateEvent[] }>(`/v1/events?after=${after}&run_id=${encodeURIComponent(runId)}`, { signal }),
   evidence: (runId: string, view: "owner" | "buyer") => request<Record<string, unknown>>(`/v1/runs/${runId}/evidence?view=${view}`),
+  labCases: () => request<LabCaseList>("/v1/lab/cases", { auth: false }),
+  labCase: (id: string, signal?: AbortSignal) => request<LabCase>(`/v1/lab/cases/${encodeURIComponent(id)}`, { auth: false, signal }),
+  labEvaluate: (caseId: string, proposal: unknown) =>
+    request<LabEvaluation>("/v1/lab/evaluate", { method: "POST", auth: false, body: { case_id: caseId, proposal } }),
   evaluation: () => request<Record<string, unknown>>("/v1/evaluations/latest", { auth: false }),
 };
 

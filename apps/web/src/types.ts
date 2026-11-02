@@ -193,6 +193,58 @@ export interface DraftResult {
   model: string | null;
 }
 
+export type GateVerdict = "allow" | "deny" | "invalid" | "approval_required";
+
+export interface LabCaseSummary {
+  case_id: string;
+  family: string;
+  title: string;
+  expected: { verdict: GateVerdict; reason_code: string | null };
+  actual: { verdict: GateVerdict; reason_code: string | null };
+  decided_by: string | null;
+  pass: boolean;
+}
+
+export interface LabCaseList {
+  evidence_mode: string;
+  note: string;
+  families: Record<string, string>;
+  summary: { total: number; passed: number };
+  cases: LabCaseSummary[];
+}
+
+export interface GateCheck {
+  name: string;
+  label: string;
+  status: "passed" | "decided" | "not_run";
+}
+
+export interface GateTrace {
+  verdict: GateVerdict;
+  reason_code: string | null;
+  decided_by: string | null;
+  detail: string;
+  checks: GateCheck[];
+}
+
+export interface LabCase {
+  case_id: string;
+  family: string;
+  title: string;
+  setup_overrides: Record<string, unknown>;
+  effective_setup: Record<string, unknown>;
+  proposal: unknown;
+  expected: { verdict: GateVerdict; reason_code: string | null };
+  trace: GateTrace;
+}
+
+export interface LabEvaluation {
+  case_id: string;
+  edited: boolean;
+  trace: GateTrace;
+  note: string;
+}
+
 export interface ApiErrorBody {
   code: string;
   message: string;

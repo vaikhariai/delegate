@@ -144,6 +144,21 @@ export function Evaluation() {
             </p>
           ) : null}
           {overall.length ? <RatioTable title="Overall" rows={overall} /> : null}
+          {overall.length ? (
+            <p className="muted">
+              Want to see one of those gate decisions?{" "}
+              <a
+                href="/lab"
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate("/lab");
+                }}
+              >
+                Replay any case in the gate lab
+              </a>
+              , edit its proposal and watch which check decides.
+            </p>
+          ) : null}
           {perSystem.map(([name, rows]) => (rows.length ? <RatioTable key={name} title={`System ${name.toUpperCase()}`} rows={rows} /> : null))}
           {notRun.length ? (
             <p className="muted" data-testid="eval-not-run">
@@ -170,7 +185,10 @@ export function Evaluation() {
         </div>
       )}
 
-      <div className="row gap">
+      <div className="row gap wrap">
+        <button type="button" className="btn btn-primary" onClick={() => navigate("/lab")} data-testid="eval-open-lab">
+          <Icon name="shieldCheck" /> Open the gate lab: replay every case
+        </button>
         <button type="button" className="btn btn-secondary" onClick={() => navigate("/")}>
           Back to start
         </button>

@@ -494,6 +494,33 @@ export function Setup() {
           </section>
         </aside>
       </div>
+
+      {/* Phones: the in-page button is several screens down, so the same action is pinned to the bottom. */}
+      {!ended ? (
+        <div className="sticky-action" role="region" aria-label="Activate">
+          {isActiveCurrent ? (
+            <button type="button" className="btn btn-primary btn-lg block" onClick={() => navigate("/negotiate")} data-testid="go-negotiate-sticky">
+              Open the negotiation <Icon name="arrowRight" />
+            </button>
+          ) : (
+            <>
+              <span className="sticky-note">
+                {invalid ? "Fix the highlighted fields first." : dirty ? `Your edits become revision ${nextRevision}.` : "Nothing is active until you activate."}
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary btn-lg block"
+                disabled={busy || invalid}
+                onClick={() => void activate()}
+                data-testid="activate-mandate-sticky"
+              >
+                <Icon name="shieldCheck" />
+                {busy ? "Activating…" : `Activate mandate · revision ${nextRevision}`}
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
     </main>
   );
 }

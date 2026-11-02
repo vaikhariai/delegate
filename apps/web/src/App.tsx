@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { LiveRegion, Nav, Notices } from "./components/Chrome";
 import { navigate, useRoute } from "./lib";
 import { Evaluation } from "./screens/Evaluation";
+import { Lab } from "./screens/Lab";
 import { Outcome } from "./screens/Outcome";
 import { NotFound } from "./screens/NotFound";
 import { Privacy } from "./screens/Privacy";
@@ -17,6 +18,7 @@ const TITLES: Record<string, string> = {
   "/negotiate": "Negotiation · Delegate",
   "/outcome": "Outcome and evidence · Delegate",
   "/evaluation": "Evaluation · Delegate",
+  "/lab": "Gate lab · Delegate",
   "/privacy": "Privacy and data · Delegate",
   "/not-found": "Not found · Delegate",
 };
@@ -33,7 +35,7 @@ function Screens() {
         Skip to content
       </a>
       <Nav />
-      {route === "/setup" ? <Setup /> : route === "/negotiate" ? <Workspace /> : route === "/outcome" ? <Outcome /> : route === "/evaluation" ? <Evaluation /> : route === "/privacy" ? <Privacy /> : route === "/not-found" ? <NotFound /> : <Start />}
+      {route === "/setup" ? <Setup /> : route === "/negotiate" ? <Workspace /> : route === "/outcome" ? <Outcome /> : route === "/evaluation" ? <Evaluation /> : route === "/lab" ? <Lab /> : route === "/privacy" ? <Privacy /> : route === "/not-found" ? <NotFound /> : <Start />}
       <footer className="footer">
         <span>{meta?.sandbox_label ?? "Marketplace sandbox: fictional item, people and money."}</span>
         <span>
