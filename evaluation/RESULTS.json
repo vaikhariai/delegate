@@ -1,7 +1,7 @@
 {
   "schema_version": "delegate-results-v1",
-  "generated_at": "2026-11-02T21:59:55.026765+00:00",
-  "commit": "9f625b811d2b",
+  "generated_at": "2026-11-02T22:53:51.428159+00:00",
+  "commit": "09d12af7a2a0",
   "scenarios_sha256": "6fc1c156bfaa64b5c9c40219c0af5ee2f2072e50af965d0222cfaf86db073439",
   "gate_oracle_agreement": {
     "numerator": 151,
@@ -11,11 +11,11 @@
     "scope": "Narrow structured action domain in docs/POLICY.md; not general semantic safety."
   },
   "test_suite": {
-    "tests": 211,
+    "tests": 214,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "timestamp": "2026-11-03T03:00:34.090006+05:30",
+    "timestamp": "2026-11-03T04:21:04.038208+05:30",
     "file": "evidence/test-runs/pytest.xml"
   },
   "systems": {
