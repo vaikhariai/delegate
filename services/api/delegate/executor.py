@@ -346,6 +346,13 @@ def _execute_tx(
         if decision.verdict is Verdict.APPROVAL_REQUIRED:
             assert p is not None and p.price_minor is not None and p.currency is not None
             ap = one(conn, "SELECT * FROM approvals WHERE action_id = :a", a=action_id)
+            other = one(conn, "SELECT approval_id FROM approvals WHERE run_id = :r AND status = 'pending' AND action_id <> :a",
+                        r=run["run_id"], a=action_id)
+            if ap is None and other is not None:
+                # One pending approval per negotiation: a repeated reservation proposal does not open a second one.
+                exe(conn, "UPDATE proposed_actions SET status = 'cancelled' WHERE action_id = :a", a=action_id)
+                return ExecResult(action_id, decision.verdict.value, "APPROVAL_ALREADY_PENDING", "cancelled",
+                                  approval_id=other["approval_id"]), None
             if ap is not None and ap["status"] != "pending":
                 exe(conn, "UPDATE proposed_actions SET status = 'cancelled' WHERE action_id = :a", a=action_id)
                 return ExecResult(action_id, decision.verdict.value, decision.reason_code, "cancelled"), None

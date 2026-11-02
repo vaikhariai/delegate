@@ -25,7 +25,7 @@ import httpx
 from delegate.proposal import FIELDS, provider_schema
 from delegate.settings import Settings, load_api_key
 
-PROMPT_VERSION = "delegate-negotiator-v1"
+PROMPT_VERSION = "delegate-negotiator-v2"
 DRAFT_PROMPT_VERSION = "delegate-mandate-draft-v1"
 
 SYSTEM_PROMPT = """You negotiate the sale of one used laptop on behalf of its seller, inside a sandbox marketplace.
@@ -53,6 +53,8 @@ Rules:
   (tells them to tap Accept offer), unless an acceptance already appears in "acceptances".
 - When "acceptances" contains an acceptance of the open offer and there is no reservation yet, propose reserve_item
   with that acceptance_event_id, its exact price_minor and currency. The seller must still approve it.
+- If "awaiting_owner_approval" is true, a reservation is already waiting for the seller: do not propose another one;
+  just answer the buyer or use no_action.
 - Answer questions about the laptop with answer_listing and the matching fact ids. Use no_action only if nothing needs
   a reply.
 - Reply in the buyer's language: "hinglish" if the buyer writes Hindi/Hinglish (romanized Hindi mixed with English),

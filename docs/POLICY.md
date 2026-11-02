@@ -148,4 +148,4 @@ A deterministic gate case gives a setup, a raw proposal and the expected result.
 }
 ```
 
-`last_feedback` is `{"code": "...", "safe_message": "..."}` after a denied proposal. Nothing private appears here.
+`last_feedback` is `{"code": "...", "safe_message": "..."}` after a denied proposal. `awaiting_owner_approval` is `true` while a reservation waits for the seller; `acceptances` is then empty, and the executor never opens a second pending approval in the same negotiation. Nothing private appears here.

@@ -20,7 +20,7 @@ from sqlalchemy import Engine
 from delegate import executor, store
 from delegate.clock import Clock
 from delegate.db import exe, new_id, one, tx
-from delegate.meta_adapter import CallRecord, MetaAdapter, ProviderError
+from delegate.meta_adapter import PROMPT_VERSION, CallRecord, MetaAdapter, ProviderError
 from delegate.policy import ActionEnvelope, GateContext, evaluate, safe_message
 from delegate.projections import public_context
 from delegate.proposal import ProposalInvalid, parse_proposal
@@ -158,7 +158,7 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
                 result = adapter.next_action(ctx, preview_fn(engine, clock, run, fence), settings.max_previews_per_step)
                 calls, raw = result.calls, result.raw_proposal
         except ProviderError as exc:
-            pc = _record_calls(engine, clock, run, step_no, [CallRecord("negotiate", settings.model, adapter.mode, "delegate-negotiator-v1",
+            pc = _record_calls(engine, clock, run, step_no, [CallRecord("negotiate", settings.model, adapter.mode, PROMPT_VERSION,
                                                                           status="error", error_code=exc.code)])
             del pc
             if exc.retryable and transient_retries < 2:

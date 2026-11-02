@@ -92,12 +92,14 @@ def public_context(conn: Connection, session_id: str, run_id: str) -> dict[str, 
     listing = _listing_public(conn, session_id, run["item_id"])
     listing.pop("state")
     feedback = run["last_feedback"]
+    pending = one(conn, "SELECT 1 AS x FROM approvals WHERE run_id = :r AND status = 'pending'", r=run_id) is not None
     return {
         "listing": listing,
         "buyer_display_name": run["buyer_display_name"],
         "conversation": [{k: v for k, v in c.items() if k in ("seq", "role", "text")} for c in _conversation(conn, run_id)],
         "open_offer": {k: v for k, v in (_open_offer(conn, run_id) or {}).items() if k in ("offer_id", "price_minor", "currency")} or None,
-        "acceptances": [a for a in _acceptances(conn, run_id) if not a.pop("used")],
+        "acceptances": [] if pending else [a for a in _acceptances(conn, run_id) if not a.pop("used")],
+        "awaiting_owner_approval": pending,
         "reservation": _reservation(conn, run_id),
         "last_feedback": {"code": feedback["code"], "safe_message": feedback["safe_message"]} if feedback else None,
         "messages_remaining": max(0, snap.max_outbound_messages - int(sent["n"])),
