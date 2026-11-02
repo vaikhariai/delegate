@@ -413,11 +413,7 @@ export function Workspace() {
               <Icon name="alert" />
               <div>
                 <strong>The agent stopped</strong>
-                <span>
-                  {run.state_reason === "agent_could_not_find_allowed_action"
-                    ? "It could not find an allowed reply within its retry limit. Send another message or retry."
-                    : "The model step failed. Nothing was sent."}
-                </span>
+                <span>{blockedReason(run.state_reason)}</span>
               </div>
               <button type="button" className="btn btn-secondary" onClick={() => void retry()} data-testid="retry-run">
                 Retry
@@ -462,3 +458,32 @@ export function Workspace() {
     </main>
   );
 }
+
+/** Plain-language reason for a blocked negotiation, from the server's state_reason. Nothing was sent in any case. */
+function blockedReason(reason: string | null): string {
+  switch (reason) {
+    case "agent_could_not_find_allowed_action":
+      return "The agent could not find a reply your limits allow, so it sent nothing. Send another buyer message or retry.";
+    case "provider_unavailable":
+      return "The live Meta model is unavailable right now, so nothing was sent. Retry when it is back.";
+    case "provider_auth":
+      return "The model provider rejected the app's credentials, so nothing was sent. This needs the operator.";
+    case "provider_rate_limit":
+      return "The model provider is busy, so nothing was sent. Retry in a moment.";
+    case "provider_timeout":
+    case "provider_network":
+    case "provider_error":
+      return "The model did not answer in time, so nothing was sent. Retry.";
+    case "model_budget_exhausted":
+      return "This demo negotiation used its model budget. Start a new scenario to continue.";
+    case "demo_daily_budget_exhausted":
+      return "The public demo reached its daily model budget. Please try again tomorrow.";
+    case "receipt_mismatch":
+      return "The reservation record does not match what you approved, so it is not reported as complete.";
+    case "receipt_unknown":
+      return "The reservation could not be read back, so it is not reported as complete.";
+    default:
+      return "The agent stopped and sent nothing. Retry.";
+  }
+}
+
