@@ -358,7 +358,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         from delegate.runtime import _record_calls
 
         _record_calls(eng(), clock, {"session_id": p.session_id, "run_id": None}, 0, calls)
-        return _normalize_draft(draft, adapter.mode, calls[0].model if calls else None)
+        used = [c.model for c in calls if c.status in ("ok",)]
+        return _normalize_draft(draft, adapter.mode, ", ".join(used) if used else (calls[0].model if calls else None))
 
     # ------------------------------------------------------------ runs
 
@@ -526,4 +527,5 @@ def _normalize_draft(draft: dict[str, Any], mode: str, model: str | None) -> dic
         "language_detected": draft.get("language_detected"),
         "provider_mode": mode,
         "model": model,
+        "path": draft.get("path"),
     }

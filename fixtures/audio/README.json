@@ -1,0 +1,20 @@
+{
+  "mandate_en.wav": {
+    "text": "I want to sell my laptop for six hundred and fifty dollars. Pickup only, cash at pickup. Hold it for fifteen minutes when a buyer accepts, and you can tell buyers about the memory, storage and battery.",
+    "voice": "am_michael",
+    "lang": "en-us",
+    "seconds": 13.53,
+    "sample_rate": 16000,
+    "format": "WAV mono PCM16",
+    "synthesis": "Kokoro v1.0 (Apache-2.0), synthetic voice; no real person"
+  },
+  "mandate_hi.wav": {
+    "text": "मुझे अपना लैपटॉप छह सौ पचास डॉलर में बेचना है। सिर्फ़ पिकअप, पैसे पिकअप पर नकद। खरीदार मान जाए तो पंद्रह मिनट होल्ड रखो, और मेमोरी, स्टोरेज और बैटरी के बारे में बता सकते हो।",
+    "voice": "hf_alpha",
+    "lang": "hi",
+    "seconds": 13.18,
+    "sample_rate": 16000,
+    "format": "WAV mono PCM16",
+    "synthesis": "Kokoro v1.0 (Apache-2.0), synthetic voice; no real person"
+  }
+}

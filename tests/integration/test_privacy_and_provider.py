@@ -353,3 +353,36 @@ def test_unavailable_provider_is_reported_not_faked(engine: Engine, real_clock: 
         assert r.status_code == 503 and r.json()["code"] == "PROVIDER_UNAVAILABLE"
     finally:
         h.close()
+
+
+def test_voice_note_falls_back_to_voice_transcribe_when_audio_input_fails(engine: Engine, real_clock: Clock, live_env: None) -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        seen.append({"path": path, "ctype": req.headers.get("content-type", "")})
+        if path.endswith("/asr/transcribe"):
+            body = req.content.decode("latin-1")
+            assert 'name="request"' in body and '"model": "muse-voice-transcribe-1.0"' in body and '"Hindi"' in body
+            assert 'name="audio"' in body and "RIFF" in body
+            return httpx.Response(200, json={"sessionId": "s1", "transcript": "Sell for 650 dollars, pickup only.", "audioDurationMs": 500, "turns": []})
+        payload = json.loads(req.content)
+        if payload["model"] == "muse-spark-1.2":
+            return httpx.Response(400, json={"error": {"message": "audio not supported for this request"}})
+        assert "Transcript of the seller's voice note" in payload["messages"][1]["content"]
+        return ok(json.dumps({"asking_price_minor": 65000, "currency": "USD", "pickup_only": True, "hold_minutes": None,
+                              "share_fact_topics": [], "ambiguities": [], "language_detected": "en", "transcript": "x"}))
+
+    settings = Settings(provider_mode="live", run_worker=False, web_dist="__none__")
+    h = Harness(engine, real_clock, settings, MetaAdapter(settings, transport=httpx.MockTransport(handle)))
+    try:
+        h.new_session()
+        r = h.client.post("/v1/mandate-drafts/voice", files={"audio": ("note.wav", _wav(), "audio/wav")}, headers=h.h())
+        assert r.status_code == 200, r.text
+        out = r.json()
+        assert out["path"] == "asr_fallback" and out["transcript"] == "Sell for 650 dollars, pickup only."
+        assert out["suggestions"] == {"asking_price_minor": 65000}
+        assert [s["path"].rsplit("/v1", 1)[1] for s in seen] == ["/chat/completions", "/asr/transcribe", "/chat/completions"]
+        assert seen[1]["ctype"].startswith("multipart/form-data")
+    finally:
+        h.close()

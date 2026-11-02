@@ -136,7 +136,8 @@ class MetaAdapter:
 
     # ------------------------------------------------------------ HTTP
 
-    def _post(self, body: dict[str, Any], rec: CallRecord) -> dict[str, Any]:
+    def _post(self, body: dict[str, Any], rec: CallRecord, *, path: str = "/chat/completions",
+              files: dict[str, Any] | None = None) -> dict[str, Any]:
         key = load_api_key()
         if not key:
             raise ProviderError("PROVIDER_UNAVAILABLE", "No Meta Model API key is configured.", False)
@@ -144,11 +145,15 @@ class MetaAdapter:
         try:
             with _sem(self.settings.provider_concurrency):
                 with httpx.Client(timeout=self.settings.provider_timeout_s, transport=self._transport) as client:
-                    resp = client.post(
-                        f"{self.settings.meta_api_base}/chat/completions",
-                        json=body,
-                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                    )
+                    if files is not None:
+                        resp = client.post(f"{self.settings.meta_api_base}{path}", files=files,
+                                           headers={"Authorization": f"Bearer {key}"})
+                    else:
+                        resp = client.post(
+                            f"{self.settings.meta_api_base}{path}",
+                            json=body,
+                            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        )
         except httpx.TimeoutException as exc:
             rec.status, rec.error_code = "timeout", "PROVIDER_TIMEOUT"
             raise ProviderError("PROVIDER_TIMEOUT", "The model took too long to respond.", True) from exc
@@ -254,22 +259,23 @@ class MetaAdapter:
 
     # ------------------------------------------------------------ mandate drafting
 
-    def draft_mandate(self, goal_text: str | None, audio_wav: bytes | None) -> tuple[dict[str, Any], list[CallRecord]]:
-        if self.mode == "mock":
-            return mock_draft(goal_text or ""), [CallRecord("draft", "mock-rules-v1", "mock", DRAFT_PROMPT_VERSION)]
-        if self.mode != "live":
-            raise ProviderError("PROVIDER_UNAVAILABLE", "Live model unavailable: no Meta Model API key is configured.", False)
-        if audio_wav is not None:
-            model = self.settings.audio_model
-            content: Any = [
-                {"type": "text", "text": "The seller recorded this voice note describing how to sell the laptop. "
-                                         "Transcribe it into 'transcript' and extract the fields."},
-                {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio_wav).decode(), "format": "wav"}},
-            ]
-        else:
-            model = self.settings.model
-            content = "Seller's goal: " + (goal_text or "")
-        rec = CallRecord("draft_audio" if audio_wav is not None else "draft_text", model, "live", DRAFT_PROMPT_VERSION)
+    def transcribe(self, audio_wav: bytes) -> tuple[str, CallRecord]:
+        """Muse Voice Transcribe file API (POST /v1/asr/transcribe), biased to English and Hindi."""
+        rec = CallRecord("transcribe", self.settings.asr_model, "live", DRAFT_PROMPT_VERSION)
+        request = {"mode": "PUSH_TO_TALK", "model": self.settings.asr_model, "audioEncoding": "WAV",
+                   "languageBias": ["English", "Hindi"]}
+        data = self._post({}, rec, path="/asr/transcribe", files={
+            "request": (None, json.dumps(request), "application/json"),
+            "audio": ("note.wav", audio_wav, "audio/wav"),
+        })
+        transcript = data.get("transcript")
+        if not isinstance(transcript, str):
+            rec.status = "invalid_output"
+            raise ProviderError("PROVIDER_INVALID_OUTPUT", "The transcription had no transcript.", True)
+        return transcript, rec
+
+    def _draft_call(self, model: str, content: Any, purpose: str) -> tuple[dict[str, Any], CallRecord]:
+        rec = CallRecord(purpose, model, "live", DRAFT_PROMPT_VERSION)
         data = self._post({
             "model": model,
             "messages": [{"role": "developer", "content": DRAFT_SYSTEM}, {"role": "user", "content": content}],
@@ -282,7 +288,50 @@ class MetaAdapter:
         except ValueError as exc:
             rec.status = "invalid_output"
             raise ProviderError("PROVIDER_INVALID_OUTPUT", "The model's draft was not valid JSON.", True) from exc
-        return draft, [rec]
+        if not isinstance(draft, dict):
+            rec.status = "invalid_output"
+            raise ProviderError("PROVIDER_INVALID_OUTPUT", "The model's draft was not an object.", True)
+        return draft, rec
+
+    def draft_mandate(self, goal_text: str | None, audio_wav: bytes | None) -> tuple[dict[str, Any], list[CallRecord]]:
+        """Suggest public mandate fields from text or a voice note.
+
+        Voice notes go to Muse Spark's audio input first. If that request is rejected or returns unusable output, the
+        note is transcribed with Muse Voice Transcribe and drafted from the transcript. ``draft["path"]`` says which ran.
+        """
+        if self.mode == "mock":
+            d = mock_draft(goal_text or "")
+            d["path"] = "mock"
+            return d, [CallRecord("draft", "mock-rules-v1", "mock", DRAFT_PROMPT_VERSION)]
+        if self.mode != "live":
+            raise ProviderError("PROVIDER_UNAVAILABLE", "Live model unavailable: no Meta Model API key is configured.", False)
+        calls: list[CallRecord] = []
+        if audio_wav is None:
+            draft, rec = self._draft_call(self.settings.model, "Seller's goal: " + (goal_text or ""), "draft_text")
+            draft["path"] = "text"
+            return draft, [rec]
+        content = [
+            {"type": "text", "text": "The seller recorded this voice note describing how to sell the laptop. "
+                                     "Transcribe it into 'transcript' and extract the fields."},
+            {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio_wav).decode(), "format": "wav"}},
+        ]
+        try:
+            draft, rec = self._draft_call(self.settings.audio_model, content, "draft_audio")
+            calls.append(rec)
+            draft["path"] = "audio_direct"
+            return draft, calls
+        except ProviderError as exc:
+            if exc.code in ("PROVIDER_AUTH", "PROVIDER_UNAVAILABLE", "PROVIDER_RATE_LIMIT"):
+                raise
+            calls.append(CallRecord("draft_audio", self.settings.audio_model, "live", DRAFT_PROMPT_VERSION,
+                                    status="fallback", error_code=exc.code))
+        transcript, rec = self.transcribe(audio_wav)
+        calls.append(rec)
+        draft, rec2 = self._draft_call(self.settings.model, "Transcript of the seller's voice note: " + transcript, "draft_text")
+        calls.append(rec2)
+        draft["transcript"] = transcript
+        draft["path"] = "asr_fallback"
+        return draft, calls
 
 
 # ---------------------------------------------------------------- mock transport (MOCK_ONLY)
