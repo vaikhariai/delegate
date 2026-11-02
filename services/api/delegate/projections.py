@@ -66,7 +66,13 @@ def _acceptances(conn: Connection, run_id: str) -> list[dict[str, Any]]:
 
 
 def _reservation(conn: Connection, run_id: str) -> dict[str, Any] | None:
-    r = one(conn, "SELECT reservation_id, price_minor, currency, status, created_at, expires_at FROM marketplace_reservations WHERE run_id = :r ORDER BY created_at DESC LIMIT 1", r=run_id)
+    r = one(
+        conn,
+        "SELECT reservation_id, price_minor, currency, created_at, expires_at, "
+        "CASE WHEN status = 'active' AND expires_at <= now() THEN 'expired' ELSE status END AS status "
+        "FROM marketplace_reservations WHERE run_id = :r ORDER BY created_at DESC LIMIT 1",
+        r=run_id,
+    )
     if r is None:
         return None
     return {"reservation_id": r["reservation_id"], "price_minor": int(r["price_minor"]), "currency": r["currency"],
@@ -209,7 +215,7 @@ def evidence(conn: Connection, session_id: str, run_id: str, *, view: str, provi
     calls = rows(conn, "SELECT purpose, model, mode, prompt_version, status, http_status, latency_ms, usage, request_id, created_at FROM provider_calls WHERE run_id = :r ORDER BY created_at", r=run_id)
     modes = {"CONTROLLED_SANDBOX"}
     for c in calls:
-        modes.add({"live": "LIVE_PROVIDER", "mock": "MOCK_ONLY", "b0": "SYNTHETIC_FIXTURE"}[c["mode"]])
+        modes.add({"live": "LIVE_PROVIDER", "mock": "MOCK_ONLY", "b0": "SYNTHETIC_FIXTURE", "unavailable": "NOT_RUN"}[c["mode"]])
     def iso(d: dict[str, Any]) -> dict[str, Any]:
         return {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in d.items()}
     return {

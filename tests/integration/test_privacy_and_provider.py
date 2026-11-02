@@ -292,3 +292,64 @@ def test_run_budget_stops_the_agent_visibly(engine: Engine, real_clock: Clock, l
         assert len(fake.requests) == 2
     finally:
         h.close()
+
+
+def _wav(seconds: float = 0.5) -> bytes:
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00" * int(16000 * seconds))
+    return buf.getvalue()
+
+
+def test_voice_note_draft_uses_audio_model_and_never_suggests_a_minimum(engine: Engine, real_clock: Clock, live_env: None) -> None:
+    draft = {"asking_price_minor": 65000, "currency": "USD", "pickup_only": True, "hold_minutes": 15,
+             "share_fact_topics": ["memory", "battery"], "ambiguities": ["You said 'not below 500'; enter the minimum yourself."],
+             "language_detected": "hinglish", "transcript": "Laptop 650 dollar mein bechna hai, sirf pickup, 500 se kam nahi."}
+    fake = FakeMeta(lambda body, n: ok(json.dumps(draft)))
+    h = live_harness(engine, real_clock, fake)
+    try:
+        h.new_session()
+        r = h.client.post("/v1/mandate-drafts/voice", files={"audio": ("note.wav", _wav(), "audio/wav")}, headers=h.h())
+        assert r.status_code == 200, r.text
+        body = fake.requests[0]["body"]
+        assert body["model"] == "muse-spark-1.2"
+        parts = body["messages"][1]["content"]
+        assert any(p.get("type") == "input_audio" and p["input_audio"]["format"] == "wav" for p in parts)
+        out = r.json()
+        assert out["status"] == "suggestion_only" and out["provider_mode"] == "live"
+        assert out["suggestions"] == {"asking_price_minor": 65000, "reservation_hold_seconds": 900,
+                                      "allowed_public_fact_ids": ["f_memory", "f_battery"]}
+        assert "min_price_minor" not in out["suggestions"]
+        # Nothing was activated or changed by the draft.
+        assert h.current()["mandate"]["status"] == "draft" and h.current()["mandate"]["current_revision"] == 1
+        bad = h.client.post("/v1/mandate-drafts/voice", files={"audio": ("x.mp3", b"ID3notawav", "audio/mpeg")}, headers=h.h())
+        assert bad.status_code == 415
+    finally:
+        h.close()
+
+
+def test_unavailable_provider_is_reported_not_faked(engine: Engine, real_clock: Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    monkeypatch.setattr("delegate.settings.KEY_FILE", __import__("pathlib").Path("/nonexistent/key"))
+    settings = Settings(provider_mode="live", run_worker=False, web_dist="__none__")
+    h = Harness(engine, real_clock, settings, MetaAdapter(settings))
+    try:
+        meta = h.client.get("/v1/meta").json()
+        assert meta["provider_mode"] == "unavailable" and meta["provider_label"] == "Live model unavailable"
+        h.new_session()
+        h.activate()
+        run_id = h.start_run()
+        h.say(run_id, "Is it available?")
+        assert h.step(run_id) == "provider_error"
+        v = h.run_view(run_id)
+        assert v["state"] == "blocked" and [c for c in v["conversation"] if c["role"] == "seller"] == []
+        r = h.client.post("/v1/mandate-drafts", json={"goal": "Sell for 650"}, headers=h.h())
+        assert r.status_code == 503 and r.json()["code"] == "PROVIDER_UNAVAILABLE"
+    finally:
+        h.close()
