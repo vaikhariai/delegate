@@ -1,0 +1,21 @@
+{
+  "//": "Lets Playwright and tsc resolve packages from apps/web/node_modules (the only Node package in this repository).",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../apps/web/node_modules/.tmp/tsconfig.e2e.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "types": ["node"],
+    "typeRoots": ["../../apps/web/node_modules/@types"],
+    "paths": {
+      "@playwright/test": ["../../apps/web/node_modules/@playwright/test"],
+      "@axe-core/playwright": ["../../apps/web/node_modules/@axe-core/playwright"]
+    }
+  },
+  "include": ["*.ts"]
+}

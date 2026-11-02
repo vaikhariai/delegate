@@ -182,121 +182,6 @@ export function Setup() {
             </ul>
           </section>
 
-          <section className="card" aria-labelledby="assist-title">
-            <h2 id="assist-title" className="card-title">
-              <Icon name="sparkle" /> Describe it (optional)
-            </h2>
-            <p className="hint">
-              Say what you want in your own words. The model suggests settings; nothing changes until you apply a suggestion and activate.
-              Your private minimum is never suggested. You type it.
-            </p>
-            <label htmlFor="goal" className="label">
-              What should the agent do?
-            </label>
-            <textarea
-              id="goal"
-              rows={3}
-              maxLength={1000}
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              placeholder="Sell my laptop for around $640, pickup only, hold it for 20 minutes once someone agrees."
-              data-testid="draft-goal"
-            />
-            <div className="row gap wrap">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={!goal.trim() || drafting !== null || ended}
-                onClick={() => void requestDraft("text")}
-                data-testid="draft-submit"
-              >
-                <Icon name="sparkle" /> {drafting === "text" ? "Reading your description…" : "Suggest settings"}
-              </button>
-              <VoiceNote disabled={drafting !== null || ended} onWav={(wav) => void requestDraft("voice", wav)} />
-            </div>
-            {drafting === "voice" ? (
-              <p className="waiting" role="status">
-                <span className="pulse" aria-hidden="true" /> The model is listening to your voice note…
-              </p>
-            ) : null}
-            {draft ? (
-              <div className="draft" data-testid="draft-result">
-                <div className="draft-head">
-                  <span className="badge badge-neutral">Suggestions only · not active</span>
-                  <span className="muted small">
-                    {draft.provider_mode === "mock" ? "MOCK_ONLY: local rules, not a model" : `Model: ${draft.model ?? "unknown"}`}
-                  </span>
-                </div>
-                {draft.transcript ? (
-                  <p className="transcript">
-                    <span className="muted">Heard:</span> &ldquo;{draft.transcript}&rdquo;
-                  </p>
-                ) : null}
-                {Object.keys(draft.suggestions).length ? (
-                  <table className="diff">
-                    <caption className="sr-only">Suggested changes</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Setting</th>
-                        <th scope="col">Now</th>
-                        <th scope="col">Suggested</th>
-                        <th scope="col">
-                          <span className="sr-only">Apply</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {draft.suggestions.asking_price_minor !== undefined ? (
-                        <tr>
-                          <th scope="row">Asking price</th>
-                          <td>{money(parsed.asking)}</td>
-                          <td className="sugg">{money(draft.suggestions.asking_price_minor)}</td>
-                          <td>
-                            <ApplyButton done={applied.includes("asking_price_minor")} onClick={() => applySuggestion("asking_price_minor")} testid="apply-asking" />
-                          </td>
-                        </tr>
-                      ) : null}
-                      {draft.suggestions.reservation_hold_seconds !== undefined ? (
-                        <tr>
-                          <th scope="row">Hold</th>
-                          <td>{form.hold} min</td>
-                          <td className="sugg">{Math.round(draft.suggestions.reservation_hold_seconds / 60)} min</td>
-                          <td>
-                            <ApplyButton done={applied.includes("reservation_hold_seconds")} onClick={() => applySuggestion("reservation_hold_seconds")} testid="apply-hold" />
-                          </td>
-                        </tr>
-                      ) : null}
-                      {draft.suggestions.allowed_public_fact_ids !== undefined ? (
-                        <tr>
-                          <th scope="row">Facts to share</th>
-                          <td>{form.facts.length} facts</td>
-                          <td className="sugg">{draft.suggestions.allowed_public_fact_ids.map(factText).join("; ")}</td>
-                          <td>
-                            <ApplyButton done={applied.includes("allowed_public_fact_ids")} onClick={() => applySuggestion("allowed_public_fact_ids")} testid="apply-facts" />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="muted">No setting could be suggested from that. Your form is unchanged.</p>
-                )}
-                {draft.ambiguities.length ? (
-                  <div className="ambiguities">
-                    <h3>
-                      <Icon name="question" size={18} /> Please check
-                    </h3>
-                    <ul>
-                      {draft.ambiguities.map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-
           <form
             className="card"
             aria-labelledby="terms-title"
@@ -421,6 +306,121 @@ export function Setup() {
               </ul>
             </div>
           </form>
+          <section className="card" aria-labelledby="assist-title">
+            <h2 id="assist-title" className="card-title">
+              <Icon name="sparkle" /> Or describe it (optional)
+            </h2>
+            <p className="hint">
+              Say what you want in your own words. The model suggests settings; nothing changes until you apply a suggestion and activate.
+              Your private minimum is never suggested. You type it.
+            </p>
+            <label htmlFor="goal" className="label">
+              What should the agent do?
+            </label>
+            <textarea
+              id="goal"
+              rows={3}
+              maxLength={1000}
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              placeholder="Sell my laptop for around $640, pickup only, hold it for 20 minutes once someone agrees."
+              data-testid="draft-goal"
+            />
+            <div className="row gap wrap">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={!goal.trim() || drafting !== null || ended}
+                onClick={() => void requestDraft("text")}
+                data-testid="draft-submit"
+              >
+                <Icon name="sparkle" /> {drafting === "text" ? "Reading your description…" : "Suggest settings"}
+              </button>
+              <VoiceNote disabled={drafting !== null || ended} onWav={(wav) => void requestDraft("voice", wav)} />
+            </div>
+            {drafting === "voice" ? (
+              <p className="waiting" role="status">
+                <span className="pulse" aria-hidden="true" /> The model is listening to your voice note…
+              </p>
+            ) : null}
+            {draft ? (
+              <div className="draft" data-testid="draft-result">
+                <div className="draft-head">
+                  <span className="badge badge-neutral">Suggestions only · not active</span>
+                  <span className="muted small">
+                    {draft.provider_mode === "mock" ? "MOCK_ONLY: local rules, not a model" : `Model: ${draft.model ?? "unknown"}`}
+                  </span>
+                </div>
+                {draft.transcript ? (
+                  <p className="transcript">
+                    <span className="muted">Heard:</span> &ldquo;{draft.transcript}&rdquo;
+                  </p>
+                ) : null}
+                {Object.keys(draft.suggestions).length ? (
+                  <table className="diff">
+                    <caption className="sr-only">Suggested changes</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Setting</th>
+                        <th scope="col">Now</th>
+                        <th scope="col">Suggested</th>
+                        <th scope="col">
+                          <span className="sr-only">Apply</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {draft.suggestions.asking_price_minor !== undefined ? (
+                        <tr>
+                          <th scope="row">Asking price</th>
+                          <td>{money(parsed.asking)}</td>
+                          <td className="sugg">{money(draft.suggestions.asking_price_minor)}</td>
+                          <td>
+                            <ApplyButton done={applied.includes("asking_price_minor")} onClick={() => applySuggestion("asking_price_minor")} testid="apply-asking" />
+                          </td>
+                        </tr>
+                      ) : null}
+                      {draft.suggestions.reservation_hold_seconds !== undefined ? (
+                        <tr>
+                          <th scope="row">Hold</th>
+                          <td>{form.hold} min</td>
+                          <td className="sugg">{Math.round(draft.suggestions.reservation_hold_seconds / 60)} min</td>
+                          <td>
+                            <ApplyButton done={applied.includes("reservation_hold_seconds")} onClick={() => applySuggestion("reservation_hold_seconds")} testid="apply-hold" />
+                          </td>
+                        </tr>
+                      ) : null}
+                      {draft.suggestions.allowed_public_fact_ids !== undefined ? (
+                        <tr>
+                          <th scope="row">Facts to share</th>
+                          <td>{form.facts.length} facts</td>
+                          <td className="sugg">{draft.suggestions.allowed_public_fact_ids.map(factText).join("; ")}</td>
+                          <td>
+                            <ApplyButton done={applied.includes("allowed_public_fact_ids")} onClick={() => applySuggestion("allowed_public_fact_ids")} testid="apply-facts" />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="muted">No setting could be suggested from that. Your form is unchanged.</p>
+                )}
+                {draft.ambiguities.length ? (
+                  <div className="ambiguities">
+                    <h3>
+                      <Icon name="question" size={18} /> Please check
+                    </h3>
+                    <ul>
+                      {draft.ambiguities.map((a) => (
+                        <li key={a}>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
         </div>
 
         <aside className="setup-side" aria-labelledby="preview-title">

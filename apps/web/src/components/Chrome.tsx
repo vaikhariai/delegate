@@ -73,7 +73,14 @@ export function Nav() {
         <div className="nav-right">
           <ModeChip compact />
           {session ? (
-            <button type="button" className="btn btn-ghost-dark" onClick={() => void resetScenario()} data-testid="reset-scenario">
+            <button
+              type="button"
+              className="btn btn-ghost-dark"
+              onClick={() => void resetScenario()}
+              aria-label="New scenario: delete this one and start fresh"
+              title="Delete this scenario and start a fresh one"
+              data-testid="reset-scenario"
+            >
               <Icon name="refresh" size={18} />
               <span className="hide-sm">New scenario</span>
             </button>

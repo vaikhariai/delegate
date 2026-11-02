@@ -5,9 +5,10 @@ import { clockTime, money, navigate, providerEvidenceMode } from "../lib";
 import { useApp } from "../state";
 
 // The verifier's field list (POLICY.md section 8), in reading order: what a seller cares about first, identity checks after.
-const BUSINESS_FIELDS: { key: string; label: string; fmt?: (v: unknown, f: Record<string, unknown>) => string }[] = [
-  { key: "item_id", label: "Item" },
-  { key: "buyer_id", label: "Buyer" },
+type Ctx = { itemTitle: string; buyerName: string };
+const BUSINESS_FIELDS: { key: string; label: string; fmt?: (v: unknown, f: Record<string, unknown>, c: Ctx) => string }[] = [
+  { key: "item_id", label: "Item", fmt: (v, _f, c) => `${c.itemTitle} (${String(v)})` },
+  { key: "buyer_id", label: "Buyer", fmt: (v, _f, c) => `${c.buyerName} (${String(v)})` },
   { key: "price_minor", label: "Price", fmt: (v, f) => money(Number(v), String(f.currency ?? "USD")) },
   { key: "currency", label: "Currency" },
   { key: "delivery", label: "Delivery", fmt: (v) => (v === "pickup" ? "Pickup only" : String(v)) },
@@ -140,7 +141,7 @@ export function Outcome() {
             </p>
             <ul className="field-checks">
               {BUSINESS_FIELDS.map((f) => (
-                <FieldRow key={f.key} label={f.label} value={f.fmt && fields[f.key] !== undefined && fields[f.key] !== null ? f.fmt(fields[f.key], fields) : fields[f.key]} state={fieldState(f.key, fields, mismatches)} testid={`field-${f.key}`} />
+                <FieldRow key={f.key} label={f.label} value={f.fmt && fields[f.key] !== undefined && fields[f.key] !== null ? f.fmt(fields[f.key], fields, { itemTitle: title, buyerName }) : fields[f.key]} state={fieldState(f.key, fields, mismatches)} testid={`field-${f.key}`} />
               ))}
               <FieldRow
                 label="Unexpired when checked"

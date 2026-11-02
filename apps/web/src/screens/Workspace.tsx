@@ -40,7 +40,7 @@ export function Workspace() {
   const [accepting, setAccepting] = useState(false);
   const [starting, setStarting] = useState(false);
   const [dismissedApproval, setDismissedApproval] = useState<string | null>(null);
-  const logRef = useRef<HTMLOListElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
   const announcedSeq = useRef(0);
   const startedFor = useRef<string | null>(null);
 
@@ -279,7 +279,8 @@ export function Workspace() {
             </div>
           ) : null}
 
-          <ol className="chat-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation" data-testid="chat-log">
+          <div className="chat-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation" tabIndex={0} data-testid="chat-log">
+            <ol className="chat-list">
             {(buyer?.conversation ?? []).length === 0 ? (
               <li className="chat-empty">
                 Ask about the laptop, make an offer, or try to talk the agent out of its limits. Use the quick prompts below or type your own.
@@ -312,7 +313,8 @@ export function Workspace() {
                 <span className="pulse" aria-hidden="true" /> {working}
               </li>
             ) : null}
-          </ol>
+            </ol>
+          </div>
 
           {open && negotiationOpen && !reservation ? (
             <div className="offer-bar" data-testid="offer-bar">
@@ -326,7 +328,7 @@ export function Workspace() {
                   <Icon name="check" size={16} /> You accepted · waiting for the seller
                 </span>
               ) : (
-                <button type="button" className="btn btn-accept" onClick={() => void accept()} disabled={accepting || mandate.status !== "active"} data-testid="accept-offer">
+                <button type="button" className="btn btn-accept" onClick={() => void accept()} disabled={accepting || mandate.status !== "active" || working !== null} data-testid="accept-offer">
                   <Icon name="hand" /> {accepting ? "Accepting…" : `Accept offer ${open.display}`}
                 </button>
               )}
