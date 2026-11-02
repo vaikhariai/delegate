@@ -25,7 +25,7 @@ import httpx
 from delegate.proposal import FIELDS, provider_schema
 from delegate.settings import Settings, load_api_key
 
-PROMPT_VERSION = "delegate-negotiator-v2"
+PROMPT_VERSION = "delegate-negotiator-v3"
 DRAFT_PROMPT_VERSION = "delegate-mandate-draft-v1"
 
 SYSTEM_PROMPT = """You negotiate the sale of one used laptop on behalf of its seller, inside a sandbox marketplace.
@@ -60,8 +60,8 @@ Rules:
 - Reply in the buyer's language: "hinglish" if the buyer writes Hindi/Hinglish (romanized Hindi mixed with English),
   otherwise "en".
 - rationale: one short sentence for the seller explaining your choice (max 200 characters). It is never shown to the buyer.
-- You may call preview_action once or twice to check whether a proposal would be allowed before giving your final answer.
-  The preview never reveals the seller's limits."""
+- You may call preview_action once or twice to check a proposal's format, terms and acceptance before giving your final
+  answer. It does not check the seller's private minimum; that is enforced only when the action runs."""
 
 DRAFT_SYSTEM = """You help a seller turn a goal into mandate fields for selling one fictional used laptop.
 Extract only what the seller clearly stated. Do not invent numbers. Amounts are US dollars as integer cents.
@@ -89,9 +89,12 @@ DRAFT_SCHEMA: dict[str, Any] = {
 
 
 class ProviderError(Exception):
-    def __init__(self, code: str, message: str, retryable: bool) -> None:
+    """A provider-side failure. ``str(exc)`` is a fixed, client-safe message; ``detail`` holds provider text for logs."""
+
+    def __init__(self, code: str, message: str, retryable: bool, detail: str = "") -> None:
         super().__init__(message)
-        self.code, self.retryable = code, retryable
+        self.code, self.retryable, self.detail = code, retryable, detail
+        self.calls: list[CallRecord] = []
 
 
 @dataclass
@@ -132,15 +135,21 @@ class MetaAdapter:
         self.settings = settings
         self.mode = settings.resolved_provider_mode()
         self._transport = transport
-        self._tools_supported_with_schema: bool | None = None
+        self._tools_off_until = 0.0
 
     # ------------------------------------------------------------ HTTP
 
     def _post(self, body: dict[str, Any], rec: CallRecord, *, path: str = "/chat/completions",
-              files: dict[str, Any] | None = None) -> dict[str, Any]:
+              files: dict[str, Any] | None = None, charge: Callable[[], None] | None = None) -> dict[str, Any]:
         key = load_api_key()
         if not key:
             raise ProviderError("PROVIDER_UNAVAILABLE", "No Meta Model API key is configured.", False)
+        if charge is not None:
+            try:
+                charge()  # atomic spend caps; raises before any request is sent
+            except ProviderError:
+                rec.status, rec.error_code = "not_sent", "BUDGET"
+                raise
         started = time.perf_counter()
         try:
             with _sem(self.settings.provider_concurrency):
@@ -182,13 +191,14 @@ class MetaAdapter:
             raise ProviderError("PROVIDER_RATE_LIMIT", "The model provider is rate limiting requests.", True)
         if resp.status_code == 400:
             rec.error_code = "PROVIDER_BAD_REQUEST"
-            raise ProviderError("PROVIDER_BAD_REQUEST", msg or "The provider rejected the request.", False)
+            raise ProviderError("PROVIDER_BAD_REQUEST", "The model provider rejected the request.", False, detail=msg)
         rec.error_code = "PROVIDER_ERROR"
         raise ProviderError("PROVIDER_ERROR", f"Provider error {resp.status_code}.", resp.status_code >= 500)
 
     # ------------------------------------------------------------ negotiation step
 
-    def next_action(self, context: dict[str, Any], preview: PreviewFn, max_previews: int) -> StepResult:
+    def next_action(self, context: dict[str, Any], preview: PreviewFn, max_previews: int,
+                    charge: Callable[[], None] | None = None) -> StepResult:
         if self.mode == "mock":
             return StepResult(json.dumps(mock_proposal(context)), [CallRecord("negotiate", "mock-rules-v1", "mock", PROMPT_VERSION)])
         if self.mode != "live":
@@ -210,7 +220,7 @@ class MetaAdapter:
         ]
         calls: list[CallRecord] = []
         previews = 0
-        use_tools = self._tools_supported_with_schema is not False and max_previews > 0
+        use_tools = max_previews > 0 and time.monotonic() >= self._tools_off_until
         for _ in range(max_previews + 2):
             body: dict[str, Any] = {
                 "model": self.settings.model,
@@ -225,16 +235,17 @@ class MetaAdapter:
             rec = CallRecord("negotiate", self.settings.model, "live", PROMPT_VERSION)
             calls.append(rec)
             try:
-                data = self._post(body, rec)
+                data = self._post(body, rec, charge=charge)
             except ProviderError as exc:
-                if exc.code == "PROVIDER_BAD_REQUEST" and "tools" in body:
-                    self._tools_supported_with_schema = False
+                if exc.code == "PROVIDER_BAD_REQUEST" and "tools" in body and "tool" in exc.detail.lower():
+                    # The provider rejected tools together with a response schema: retry this step without tools and
+                    # skip tools for a while (not forever, and not because of unrelated 400s).
+                    self._tools_off_until = time.monotonic() + 600
                     use_tools = False
                     rec.status = "retry_without_tools"
                     continue
+                exc.calls = calls
                 raise
-            if "tools" in body:
-                self._tools_supported_with_schema = True
             msg = ((data.get("choices") or [{}])[0]).get("message") or {}
             tool_calls = msg.get("tool_calls") or []
             if tool_calls:
@@ -259,12 +270,12 @@ class MetaAdapter:
 
     # ------------------------------------------------------------ mandate drafting
 
-    def transcribe(self, audio_wav: bytes) -> tuple[str, CallRecord]:
+    def transcribe(self, audio_wav: bytes, charge: Callable[[], None] | None = None) -> tuple[str, CallRecord]:
         """Muse Voice Transcribe file API (POST /v1/asr/transcribe), biased to English and Hindi."""
         rec = CallRecord("transcribe", self.settings.asr_model, "live", DRAFT_PROMPT_VERSION)
         request = {"mode": "PUSH_TO_TALK", "model": self.settings.asr_model, "audioEncoding": "WAV",
                    "languageBias": ["English", "Hindi"]}
-        data = self._post({}, rec, path="/asr/transcribe", files={
+        data = self._post({}, rec, path="/asr/transcribe", charge=charge, files={
             "request": (None, json.dumps(request), "application/json"),
             "audio": ("note.wav", audio_wav, "audio/wav"),
         })
@@ -274,14 +285,15 @@ class MetaAdapter:
             raise ProviderError("PROVIDER_INVALID_OUTPUT", "The transcription had no transcript.", True)
         return transcript, rec
 
-    def _draft_call(self, model: str, content: Any, purpose: str) -> tuple[dict[str, Any], CallRecord]:
+    def _draft_call(self, model: str, content: Any, purpose: str,
+                    charge: Callable[[], None] | None = None) -> tuple[dict[str, Any], CallRecord]:
         rec = CallRecord(purpose, model, "live", DRAFT_PROMPT_VERSION)
         data = self._post({
             "model": model,
             "messages": [{"role": "developer", "content": DRAFT_SYSTEM}, {"role": "user", "content": content}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "MandateDraft", "schema": DRAFT_SCHEMA, "strict": True}},
             "max_completion_tokens": 4000,
-        }, rec)
+        }, rec, charge=charge)
         text = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
         try:
             draft = json.loads(text)
@@ -293,11 +305,13 @@ class MetaAdapter:
             raise ProviderError("PROVIDER_INVALID_OUTPUT", "The model's draft was not an object.", True)
         return draft, rec
 
-    def draft_mandate(self, goal_text: str | None, audio_wav: bytes | None) -> tuple[dict[str, Any], list[CallRecord]]:
+    def draft_mandate(self, goal_text: str | None, audio_wav: bytes | None,
+                      charge: Callable[[], None] | None = None) -> tuple[dict[str, Any], list[CallRecord]]:
         """Suggest public mandate fields from text or a voice note.
 
         Voice notes go to Muse Spark's audio input first. If that request is rejected or returns unusable output, the
         note is transcribed with Muse Voice Transcribe and drafted from the transcript. ``draft["path"]`` says which ran.
+        On failure the raised ProviderError carries every call made so far in ``calls``.
         """
         if self.mode == "mock":
             d = mock_draft(goal_text or "")
@@ -306,29 +320,40 @@ class MetaAdapter:
         if self.mode != "live":
             raise ProviderError("PROVIDER_UNAVAILABLE", "Live model unavailable: no Meta Model API key is configured.", False)
         calls: list[CallRecord] = []
+
+        def tracked(fn: Callable[[], tuple[Any, CallRecord]], purpose: str, model: str) -> Any:
+            try:
+                value, rec = fn()
+            except ProviderError as exc:
+                calls.append(CallRecord(purpose, model, "live", DRAFT_PROMPT_VERSION, status="error", error_code=exc.code))
+                exc.calls = calls
+                raise
+            calls.append(rec)
+            return value
+
         if audio_wav is None:
-            draft, rec = self._draft_call(self.settings.model, "Seller's goal: " + (goal_text or ""), "draft_text")
+            draft = tracked(lambda: self._draft_call(self.settings.model, "Seller's goal: " + (goal_text or ""), "draft_text", charge),
+                            "draft_text", self.settings.model)
             draft["path"] = "text"
-            return draft, [rec]
+            return draft, calls
         content = [
             {"type": "text", "text": "The seller recorded this voice note describing how to sell the laptop. "
                                      "Transcribe it into 'transcript' and extract the fields."},
             {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio_wav).decode(), "format": "wav"}},
         ]
         try:
-            draft, rec = self._draft_call(self.settings.audio_model, content, "draft_audio")
-            calls.append(rec)
+            draft = tracked(lambda: self._draft_call(self.settings.audio_model, content, "draft_audio", charge),
+                            "draft_audio", self.settings.audio_model)
             draft["path"] = "audio_direct"
             return draft, calls
         except ProviderError as exc:
-            if exc.code in ("PROVIDER_AUTH", "PROVIDER_UNAVAILABLE", "PROVIDER_RATE_LIMIT"):
+            if exc.code in ("PROVIDER_AUTH", "PROVIDER_UNAVAILABLE", "PROVIDER_RATE_LIMIT", "MODEL_BUDGET_EXHAUSTED",
+                            "DEMO_DAILY_BUDGET_EXHAUSTED"):
                 raise
-            calls.append(CallRecord("draft_audio", self.settings.audio_model, "live", DRAFT_PROMPT_VERSION,
-                                    status="fallback", error_code=exc.code))
-        transcript, rec = self.transcribe(audio_wav)
-        calls.append(rec)
-        draft, rec2 = self._draft_call(self.settings.model, "Transcript of the seller's voice note: " + transcript, "draft_text")
-        calls.append(rec2)
+            calls[-1].status = "fallback"
+        transcript = tracked(lambda: self.transcribe(audio_wav, charge), "transcribe", self.settings.asr_model)
+        draft = tracked(lambda: self._draft_call(self.settings.model, "Transcript of the seller's voice note: " + transcript,
+                                                 "draft_text", charge), "draft_text", self.settings.model)
         draft["transcript"] = transcript
         draft["path"] = "asr_fallback"
         return draft, calls

@@ -8,7 +8,9 @@ if no buyer event arrived after the claim, so new input is never lost.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
+import json
 import logging
 import threading
 import time
@@ -16,8 +18,9 @@ from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy import Engine
+from sqlalchemy.exc import DataError
 
-from delegate import executor, obs, signals, store
+from delegate import budget, executor, obs, signals, store
 from delegate.clock import Clock
 from delegate.db import exe, new_id, one, rows, tx
 from delegate.meta_adapter import PROMPT_VERSION, CallRecord, MetaAdapter, ProviderError
@@ -88,14 +91,16 @@ def _record_calls(engine: Engine, clock: Clock, run: dict[str, Any], step_no: in
                 "prompt_tokens": (c.usage or {}).get("prompt_tokens"), "completion_tokens": (c.usage or {}).get("completion_tokens"),
                 "request_id": c.request_id, "error_code": c.error_code,
             })
-        live = sum(1 for c in calls if c.mode == "live")
-        exe(conn, "UPDATE runs SET provider_calls = provider_calls + :k WHERE run_id = :r", k=len(calls), r=run["run_id"])
-        exe(conn, "UPDATE demo_sessions SET provider_calls = provider_calls + :k WHERE session_id = :s", k=live, s=run["session_id"])
+    # Counters are not incremented here: budget.charger reserves each live call atomically before it is sent.
     return last_id
 
 
 def preview_fn(engine: Engine, clock: Clock, run: dict[str, Any], fence: int) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    """Read-only gate preview for the model's tool call. Never reveals thresholds; never executes."""
+    """Read-only gate preview for the model's tool call. Never executes.
+
+    The preview evaluates prices without the private minimum (only the public asking price bounds it), so it cannot be
+    used to binary-search the floor. The real gate, with the minimum, runs at execution.
+    """
 
     def _preview(args: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -105,7 +110,7 @@ def preview_fn(engine: Engine, clock: Clock, run: dict[str, Any], fence: int) ->
         with engine.connect() as conn:
             r = store.get_run(conn, run["session_id"], run["run_id"])
             m = store.mandate_row(conn, run["session_id"])
-            snap = store.snapshot(conn, m)
+            snap = dataclasses.replace(store.snapshot(conn, m), min_price_minor=1)
             now = clock.now()
             env = ActionEnvelope(
                 action_id="preview", session_id=run["session_id"], run_id=run["run_id"], item_id=r["item_id"],
@@ -155,8 +160,7 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
             if m["status"] != "active" or (m["expires_at"] is not None and clock.now() >= m["expires_at"]):
                 outcome = "mandate_not_active"
                 break
-            day = one(conn, "SELECT count(*) AS n FROM provider_calls WHERE mode = 'live' AND created_at > :t",
-                      t=clock.now() - dt.timedelta(hours=24))
+            day = one(conn, "SELECT live_calls AS n FROM daily_usage WHERE day = :d", d=clock.now().date())
             if day is not None and int(day["n"]) >= settings.max_live_calls_per_day:
                 outcome = "global_budget_exhausted"
                 break
@@ -173,12 +177,12 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
                 origin = "b0"
             else:
                 _event(engine, clock, run, "model.started", "agent", "The agent is reading the conversation.", {"mode": adapter.mode})
-                result = adapter.next_action(ctx, preview_fn(engine, clock, run, fence), settings.max_previews_per_step)
+                charge = budget.charger(engine, clock, settings, session_id, run_id, per_attempt_cap=settings.max_provider_calls_per_step)
+                result = adapter.next_action(ctx, preview_fn(engine, clock, run, fence), settings.max_previews_per_step, charge=charge)
                 calls, raw = result.calls, result.raw_proposal
         except ProviderError as exc:
-            pc = _record_calls(engine, clock, run, step_no, [CallRecord("negotiate", settings.model, adapter.mode, PROMPT_VERSION,
-                                                                          status="error", error_code=exc.code)])
-            del pc
+            _record_calls(engine, clock, run, step_no, exc.calls or [CallRecord("negotiate", settings.model, adapter.mode, PROMPT_VERSION,
+                                                                                 status="error", error_code=exc.code)])
             if exc.retryable and transient_retries < 2:
                 transient_retries += 1
                 attempt -= 1
@@ -198,7 +202,12 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
             return "fence_lost"
         if raw is None:
             raw = '{"__empty__": true}'
-        action_id = executor.persist_proposal(engine, clock, session_id, run_id, step_no, attempt, raw, origin, call_id)
+        try:
+            action_id = executor.persist_proposal(engine, clock, session_id, run_id, step_no, attempt, raw, origin, call_id)
+        except (ValueError, UnicodeError, DataError) as exc:  # e.g. control characters the database cannot store
+            log.warning("unstorable proposal", extra={"event": "invalid_output", "session": obs.session_ref(session_id), "error": type(exc).__name__})
+            raw = json.dumps({"unstorable_output": True})
+            action_id = executor.persist_proposal(engine, clock, session_id, run_id, step_no, attempt, raw, origin, call_id)
         res = executor.execute(engine, clock, session_id, action_id, fence=fence)
         _event(engine, clock, run, "model.completed", "agent", f"Agent step finished: {res.status}.",
                {"action_id": action_id, "verdict": res.verdict, "reason_code": res.reason_code})

@@ -36,7 +36,8 @@ def make_engine(database_url: str, pgdata_dir: str, pool_size: int = 10) -> Engi
     url = database_url or embedded_url(pgdata_dir)
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-    engine = create_engine(url, pool_size=pool_size, max_overflow=10, pool_pre_ping=True, future=True)
+    # hide_parameters: tracebacks and logs never include bound values (buyer text, tokens, session IDs).
+    engine = create_engine(url, pool_size=pool_size, max_overflow=10, pool_pre_ping=True, future=True, hide_parameters=True)
 
     @event.listens_for(engine, "connect")
     def _utc(dbapi_conn: Any, _rec: Any) -> None:

@@ -95,7 +95,13 @@ Gate rule (check 7): a `reserve_item` for a buyer with any high-severity signal 
 | `MANDATE_*`, `STALE_REVISION`, `ACTION_EXPIRED` | The seller's permission changed or expired. |
 | `SCHEMA_INVALID` | The proposal did not follow the action format. |
 
-No safe message contains the minimum price, the address, the phone number or seller notes.
+No safe message contains the minimum price, the address, the phone number or seller notes. The model receives the reason code together with the safe message (in `last_feedback` and in `preview_action` results); codes name the rule, never a threshold.
+
+Limits such as `max_outbound_messages` and `max_reservations` are counted per negotiation (per run, that is per buyer).
+
+`preview_action` evaluates a proposal with the private minimum removed (only the public asking price bounds a price), so previews cannot reveal the floor. The minimum is enforced only at execution.
+
+Scope of floor secrecy: the minimum never appears in any buyer or model channel. It can still be inferred from behaviour: a buyer who repeatedly says "counter at exactly $X or decline" learns whether X is at or above the floor, about one bit per message. With 8 messages per negotiation that narrows the floor to a few dollars; a human seller who accepts offers at or above a floor leaks the same information. The demo does not claim information-theoretic secrecy.
 
 ## 8. Outcome verification
 

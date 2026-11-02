@@ -41,7 +41,6 @@ class Settings:
     provider_timeout_s: float = 45.0
     session_ttl_s: int = 24 * 3600
     mandate_lifetime_s: int = 30 * 60
-    approval_lifetime_s: int = 120
     max_provider_calls_per_run: int = 24
     max_provider_calls_per_session: int = 60
     max_live_calls_per_day: int = field(default_factory=lambda: _int("DELEGATE_MAX_LIVE_CALLS_PER_DAY", 1500))

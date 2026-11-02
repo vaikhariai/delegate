@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import subprocess
+import threading
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -22,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, text
 
-from delegate import executor, obs, projections, signals, store
+from delegate import budget, executor, obs, projections, signals, store
 from delegate.clock import Clock
 from delegate.db import exe, make_engine, migrate, one, tx
 from delegate.meta_adapter import MetaAdapter, ProviderError
@@ -91,6 +92,9 @@ def _digits(value: str | None, limit: int = 18) -> int | None:
 
 
 MAX_BODY_BYTES = 5 * 1024 * 1024
+MAX_STREAMS_PER_SESSION = 3
+_streams: dict[str, int] = {}
+_streams_lock = threading.Lock()
 
 
 def create_app(settings: Settings | None = None, clock: Clock | None = None, engine: Engine | None = None,
@@ -337,7 +341,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
 
     @app.post("/v1/mandate-drafts")
     def draft_text(body: DraftBody, p: store.Principal = Depends(principal)) -> dict[str, Any]:
-        return _draft(p, body.goal, None)
+        return _draft(p, store.clean_text(body.goal), None)
 
     @app.post("/v1/mandate-drafts/voice")
     async def draft_voice(audio: UploadFile = File(...), p: store.Principal = Depends(principal)) -> dict[str, Any]:
@@ -349,15 +353,21 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         return await run_in_threadpool(_draft, p, None, data)
 
     def _draft(p: store.Principal, goal: str | None, audio: bytes | None) -> dict[str, Any]:
-        with eng().connect() as c:
-            s = one(c, "SELECT provider_calls FROM demo_sessions WHERE session_id = :s", s=p.session_id)
-        if s and int(s["provider_calls"]) >= settings.max_provider_calls_per_session:
-            raise store.ApiError(429, "SESSION_QUOTA", "This demo session used its model quota. Start a new scenario.")
-        adapter: MetaAdapter = state["adapter"]
-        draft, calls = adapter.draft_mandate(goal, audio)
         from delegate.runtime import _record_calls
 
-        _record_calls(eng(), clock, {"session_id": p.session_id, "run_id": None}, 0, calls)
+        adapter: MetaAdapter = state["adapter"]
+        charge = budget.charger(eng(), clock, settings, p.session_id, None)
+        calls: list[Any] = []
+        try:
+            draft, calls = adapter.draft_mandate(goal, audio, charge=charge)
+        except ProviderError as exc:
+            calls = exc.calls
+            if exc.code in ("MODEL_BUDGET_EXHAUSTED", "DEMO_DAILY_BUDGET_EXHAUSTED"):
+                raise store.ApiError(429, exc.code, str(exc)) from exc
+            raise
+        finally:
+            if calls:
+                _record_calls(eng(), clock, {"session_id": p.session_id, "run_id": None}, 0, calls)
         used = [c.model for c in calls if c.status in ("ok",)]
         return _normalize_draft(draft, adapter.mode, ", ".join(used) if used else (calls[0].model if calls else None))
 
@@ -430,11 +440,23 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
                   last_event_id: str | None = Header(default=None), after: int = Query(0, ge=0, le=10**12)) -> StreamingResponse:
         with eng().connect() as c:
             store.get_run(c, p.session_id, run_id)
+        with _streams_lock:
+            if _streams.get(p.session_id, 0) >= MAX_STREAMS_PER_SESSION:
+                raise store.ApiError(429, "TOO_MANY_STREAMS", "Close other tabs for this scenario and try again.", True)
+            _streams[p.session_id] = _streams.get(p.session_id, 0) + 1
         parsed = _digits(last_event_id, 12)
         cursor: int = parsed if parsed is not None else after
         token = request.headers.get("authorization", "")[7:]
 
         async def gen() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in _gen():
+                    yield chunk
+            finally:
+                with _streams_lock:
+                    _streams[p.session_id] = max(0, _streams.get(p.session_id, 1) - 1)
+
+        async def _gen() -> AsyncIterator[bytes]:
             nonlocal cursor
             idle = 0.0
             checked = 0.0

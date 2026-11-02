@@ -148,6 +148,14 @@ def parse_proposal(raw: Any) -> Proposal:
     if not isinstance(rationale, str) or len(rationale) > RATIONALE_MAX:
         raise ProposalInvalid(f"rationale must be a string of at most {RATIONALE_MAX} characters")
 
+    for value in (rationale, acc or "", *facts):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ProposalInvalid("strings must be valid text") from exc
+        if any(ord(c) < 32 and c not in "\n\t" for c in value):
+            raise ProposalInvalid("strings must not contain control characters")
+
     if (price is None) != (currency is None):
         raise ProposalInvalid("price_minor and currency must be given together")
 

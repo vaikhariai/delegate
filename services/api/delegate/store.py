@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import json
 import secrets
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -205,7 +206,8 @@ def authenticate(engine: Engine, clock: Clock, token: str | None) -> Principal:
 
 def delete_session(engine: Engine, session_id: str) -> None:
     with tx(engine) as conn:
-        exe(conn, "DELETE FROM provider_calls WHERE session_id = :s", s=session_id)
+        # Keep the call ledger (no content in it) so deleting a session cannot reset spend accounting.
+        exe(conn, "UPDATE provider_calls SET session_id = NULL, run_id = NULL WHERE session_id = :s", s=session_id)
         exe(conn, "DELETE FROM receipts WHERE session_id = :s", s=session_id)
         exe(conn, "DELETE FROM operations WHERE session_id = :s", s=session_id)
         exe(conn, "DELETE FROM approvals WHERE session_id = :s", s=session_id)
@@ -382,7 +384,8 @@ def requeue_unanswered(conn: Connection, session_id: str) -> int:
         "UPDATE runs r SET needs_step = true WHERE r.session_id = :s AND r.state IN ('running', 'awaiting_buyer', 'waiting_approval') "
         "AND ((SELECT role FROM marketplace_messages m WHERE m.run_id = r.run_id ORDER BY created_at DESC, message_id DESC LIMIT 1) "
         "      IN ('buyer', 'system') "
-        "  OR EXISTS (SELECT 1 FROM buyer_events e WHERE e.run_id = r.run_id AND e.kind = 'offer_acceptance' AND e.used_by_action IS NULL))",
+        "  OR EXISTS (SELECT 1 FROM buyer_events e JOIN marketplace_offers o ON o.offer_id = e.offer_id "
+        "             WHERE e.run_id = r.run_id AND e.kind = 'offer_acceptance' AND e.used_by_action IS NULL AND o.status = 'open'))",
         s=session_id,
     )
 
@@ -501,15 +504,29 @@ def start_run(engine: Engine, clock: Clock, p: Principal, buyer_id: str, system:
     return {"run_id": run_id, "created": True}
 
 
+def clean_text(text: str) -> str:
+    """Reject control characters and unpaired surrogates; strip invisible format characters (zero-width, bidi overrides)
+    so stored text cannot spoof what the owner sees."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ApiError(422, "INVALID_TEXT", "The message contains characters that cannot be stored.") from exc
+    if any(unicodedata.category(c) == "Cc" and c not in "\n\t" for c in text):
+        raise ApiError(422, "INVALID_TEXT", "Remove control characters from the message.")
+    return "".join(c for c in text if unicodedata.category(c) != "Cf")
+
+
 def buyer_turn(engine: Engine, clock: Clock, p: Principal, run_id: str, text: str, max_turns: int) -> dict[str, Any]:
-    text = (text or "").strip()
+    text = clean_text(text or "").strip()
     if not text:
         raise ApiError(422, "EMPTY_MESSAGE", "Type a message first.")
     if len(text) > MAX_BUYER_TEXT:
         raise ApiError(422, "MESSAGE_TOO_LONG", f"Keep buyer messages under {MAX_BUYER_TEXT} characters.")
-    signals = risk.scan(text)
     with tx(engine) as conn:
         run = get_run(conn, p.session_id, run_id, for_update=True)
+        recent = [r["text"] for r in rows(conn, "SELECT text FROM buyer_events WHERE run_id = :r AND kind = 'message' "
+                                                "ORDER BY created_at DESC LIMIT 2", r=run_id)][::-1]
+        signals = risk.scan_window([*recent, text])
         if run["state"] in ("completed", "failed", "cancelled"):
             raise ApiError(409, "RUN_ENDED", "This negotiation has ended. Start a new one.")
         if run["state"] == "paused":

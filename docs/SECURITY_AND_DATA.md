@@ -18,7 +18,11 @@ In scope: a malicious buyer (prompt injection, authority claims, scams), a malfo
 | Abuse | New sessions per network per hour, buyer turns per run, provider calls per run and session, global provider concurrency | `test_session_creation_is_rate_limited` |
 | Secrets | Meta key server-side only, from Secret Manager in production; never logged or exported | provider evidence test checks the export |
 
-Known limits: repeated price previews or counters can let a persistent buyer infer roughly where the floor is. Previews are capped, but no information-theoretic secrecy is claimed. IP-based limits are coarse and are not identity.
+| Spend | Every live provider request first reserves one call atomically against the run (24), session (60) and daily (`DELEGATE_MAX_LIVE_CALLS_PER_DAY`, 1500) caps; failed calls are recorded too; the daily counter survives session deletion | `tests/integration/test_adversarial_fixes.py` |
+| Scam text | Scanner normalizes NFKC, lookalike letters, invisible characters and digits inside words, covers English, Hinglish and Devanagari phrasings, and also scans the last three buyer messages together; the model's signals are added and shown to the owner | 19 bypasses caught, 18 ordinary messages not flagged, 0/34 legitimate probes flagged |
+| Text safety | Control characters and unpaired surrogates rejected; zero-width and bidi characters stripped at ingest; database errors never log bound values | `test_control_and_format_characters` |
+
+Known limits: the private minimum never appears in buyer or model channels, and the preview tool ignores it, but a persistent buyer can still infer roughly where it is from accept/decline behaviour (about one bit per message; see `POLICY.md` section 7). IP-based limits are coarse and are not identity. Two independent reviews (3 Nov 2026) found no authorization, cross-session or disclosure defects; all their other findings are fixed with regression tests.
 
 ## Data
 

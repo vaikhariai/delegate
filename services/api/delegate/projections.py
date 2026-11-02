@@ -57,7 +57,8 @@ def _acceptances(conn: Connection, run_id: str) -> list[dict[str, Any]]:
     for e in rows(
         conn,
         "SELECT e.event_id, e.offer_id, e.used_by_action, o.price_minor, o.currency FROM buyer_events e "
-        "JOIN marketplace_offers o ON o.offer_id = e.offer_id WHERE e.run_id = :r AND e.kind = 'offer_acceptance' ORDER BY e.created_at",
+        "JOIN marketplace_offers o ON o.offer_id = e.offer_id WHERE e.run_id = :r AND e.kind = 'offer_acceptance' "
+        "AND o.status = 'open' ORDER BY e.created_at",
         r=run_id,
     ):
         out.append({"acceptance_event_id": e["event_id"], "offer_id": e["offer_id"], "price_minor": int(e["price_minor"]),
@@ -173,6 +174,8 @@ def owner_run_view(conn: Connection, session_id: str, run_id: str) -> dict[str, 
     signals: set[str] = set()
     for ev in rows(conn, "SELECT risk_signals FROM buyer_events WHERE run_id = :r", r=run_id):
         signals.update(ev["risk_signals"] or [])
+    for pa in rows(conn, "SELECT raw_proposal FROM proposed_actions WHERE run_id = :r AND validation_error IS NULL", r=run_id):
+        signals.update((pa["raw_proposal"] or {}).get("buyer_risk_signals") or [])  # the gate uses the same union
     return {
         "run_id": run_id,
         "state": run["state"],
