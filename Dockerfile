@@ -11,7 +11,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080 \
     DELEGATE_PGDATA=/tmp/delegate-pgdata DELEGATE_WEB_DIST=/srv/apps/web/dist
 WORKDIR /srv
-RUN pip install --no-cache-dir uv==0.9.*
+RUN pip install --no-cache-dir uv==0.13.6
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY packages/ ./packages/
 COPY services/ ./services/
