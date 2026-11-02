@@ -16,7 +16,7 @@ from typing import Any
 
 from mandate_gate import ApprovalRecord, ApprovalStatus, Decision, Verdict, canonical_bytes
 from sqlalchemy import Connection, Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from delegate import store
 from delegate.clock import Clock
@@ -219,8 +219,8 @@ def _context(
     assert counts is not None
     reserved = one(
         conn,
-        "SELECT 1 AS x FROM marketplace_reservations WHERE session_id = :s AND item_id = :i AND status = 'active' AND expires_at > :n",
-        s=session_id, i=run["item_id"], n=now,
+        "SELECT 1 AS x FROM marketplace_reservations WHERE session_id = :s AND item_id = :i AND status = 'active'",
+        s=session_id, i=run["item_id"],
     )
     signals: set[str] = set()
     for ev in rows(conn, "SELECT risk_signals FROM buyer_events WHERE run_id = :r", r=run["run_id"]):
@@ -286,10 +286,28 @@ def execute(
     except OperationalError:
         # The commit outcome is unknown (connection lost). Reconcile by operation identity, never by retrying blindly.
         return reconcile(engine, clock, session_id, action_id)
+    except IntegrityError as exc:
+        # A database constraint (for example one active reservation per item) refused the effect; nothing was written.
+        raise store.ApiError(409, "CONFLICT", "That action conflicts with the current state. Reload and try again.") from exc
+    if owner_approval is not None and result.reason_code == "APPROVAL_EXPIRED":
+        raise store.ApiError(410, "APPROVAL_EXPIRED", "This approval expired. The agent will need to ask again.")
+    if verify_op is None and result.duplicate and result.operation_id:
+        verify_op = _unverified_reservation(engine, session_id, result.operation_id)
     if verify_op is not None:
-        receipt = verify(engine, clock, session_id, verify_op)
+        try:
+            receipt = verify(engine, clock, session_id, verify_op)
+        except OperationalError:
+            return result  # the next duplicate request or the worker re-verifies; nothing is reported complete
         result = ExecResult(**{**result.as_dict(), "receipt_verdict": receipt["verdict"]})
     return result
+
+
+def _unverified_reservation(engine: Engine, session_id: str, operation_id: str) -> str | None:
+    with engine.connect() as conn:
+        r = one(conn, "SELECT o.operation_id FROM operations o WHERE o.operation_id = :o AND o.session_id = :s AND o.kind = 'reserve_item' "
+                      "AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.operation_id = o.operation_id AND r.verdict = 'verified')",
+                o=operation_id, s=session_id)
+    return r["operation_id"] if r else None
 
 
 def _execute_tx(
@@ -310,6 +328,7 @@ def _execute_tx(
         a_row, env = _load_action(conn, session_id, action_id)
         run = store.get_run(conn, session_id, env.run_id, for_update=True)
         _hook("after_locks", {"action_id": action_id, "session_id": session_id})
+        expire_lapsed_holds(conn, clock, session_id, m["item_id"])
 
         existing = one(conn, "SELECT * FROM operations WHERE action_id = :a", a=action_id)
         if existing is not None:
@@ -319,13 +338,17 @@ def _execute_tx(
         snap = store.snapshot(conn, m)
 
         if owner_approval is not None:
-            _apply_owner_approval(conn, clock, session_id, action_id, owner_approval, principal, snap)
+            if not _apply_owner_approval(conn, clock, session_id, action_id, owner_approval, principal, snap):
+                return ExecResult(action_id, "deny", "APPROVAL_EXPIRED", "cancelled", approval_id=owner_approval[0]), None
 
         ctx = _context(conn, clock, session_id, run, fence, action_id, principal)
         decision = evaluate(env, snap, ctx)
         _record_decision(conn, clock, session_id, env, snap.revision, decision, "execution")
         p = env.proposal
 
+        if decision.verdict is Verdict.DENY and decision.reason_code == "FENCE_STALE":
+            exe(conn, "UPDATE proposed_actions SET status = 'denied' WHERE action_id = :a", a=action_id)
+            return ExecResult(action_id, decision.verdict.value, decision.reason_code, "denied"), None
         if decision.verdict in (Verdict.INVALID, Verdict.DENY):
             status = "invalid" if decision.verdict is Verdict.INVALID else "denied"
             exe(conn, "UPDATE proposed_actions SET status = :st WHERE action_id = :a", st=status, a=action_id)
@@ -346,8 +369,8 @@ def _execute_tx(
         if decision.verdict is Verdict.APPROVAL_REQUIRED:
             assert p is not None and p.price_minor is not None and p.currency is not None
             ap = one(conn, "SELECT * FROM approvals WHERE action_id = :a", a=action_id)
-            other = one(conn, "SELECT approval_id FROM approvals WHERE run_id = :r AND status = 'pending' AND action_id <> :a",
-                        r=run["run_id"], a=action_id)
+            other = one(conn, "SELECT approval_id FROM approvals WHERE run_id = :r AND status = 'pending' AND action_id <> :a "
+                              "AND expires_at > :n", r=run["run_id"], a=action_id, n=clock.now())
             if ap is None and other is not None:
                 # One pending approval per negotiation: a repeated reservation proposal does not open a second one.
                 exe(conn, "UPDATE proposed_actions SET status = 'cancelled' WHERE action_id = :a", a=action_id)
@@ -476,6 +499,19 @@ def _execute_tx(
     return ExecResult(action_id, "allow", None, "succeeded", operation_id), verify_op
 
 
+def expire_lapsed_holds(conn: Connection, clock: Clock, session_id: str, item_id: str) -> int:
+    """Mark lapsed reservation holds expired and relist the item. Caller holds the listing lock."""
+    n = exe(
+        conn,
+        "UPDATE marketplace_reservations SET status = 'expired' WHERE session_id = :s AND item_id = :i AND status = 'active' "
+        "AND expires_at <= :n",
+        s=session_id, i=item_id, n=clock.now(),
+    )
+    if n:
+        exe(conn, "UPDATE listings SET state = 'listed' WHERE session_id = :s AND item_id = :i", s=session_id, i=item_id)
+    return n
+
+
 def _apply_owner_approval(
     conn: Connection,
     clock: Clock,
@@ -484,7 +520,8 @@ def _apply_owner_approval(
     owner_approval: tuple[str, str],
     principal: str,
     snap: MandateSnapshot,
-) -> None:
+) -> bool:
+    """Mark the approval approved. Returns False (with the expiry persisted) if it had expired."""
     approval_id, seen_hash = owner_approval
     ap = one(conn, "SELECT * FROM approvals WHERE approval_id = :ap AND session_id = :s FOR UPDATE", ap=approval_id, s=session_id)
     if ap is None or ap["action_id"] != action_id:
@@ -493,7 +530,13 @@ def _apply_owner_approval(
         raise store.ApiError(409, "APPROVAL_NOT_PENDING", f"This approval is already {ap['status']}.")
     if clock.now() >= ap["expires_at"]:
         exe(conn, "UPDATE approvals SET status = 'expired', resolved_at = :n WHERE approval_id = :ap", n=clock.now(), ap=approval_id)
-        raise store.ApiError(410, "APPROVAL_EXPIRED", "This approval expired. The agent will need to ask again.")
+        exe(conn, "UPDATE proposed_actions SET status = 'cancelled' WHERE action_id = :a", a=action_id)
+        exe(conn, "UPDATE runs SET state = 'awaiting_buyer', needs_step = true, updated_at = :n WHERE run_id = :r AND state = 'waiting_approval'",
+            n=clock.now(), r=ap["run_id"])
+        store.append_event(conn, clock, session_id, "approval.expired", "system",
+                           "That approval request expired before it was approved. The agent can ask again.",
+                           run_id=ap["run_id"], object_id=approval_id, owner_only=True)
+        return False
     if seen_hash != ap["action_hash"] or ap["owner_principal"] != principal:
         raise store.ApiError(409, "APPROVAL_MISMATCH", "The action changed since you reviewed it. Review it again.")
     exe(conn, "UPDATE approvals SET status = 'approved', resolved_at = :n WHERE approval_id = :ap", n=clock.now(), ap=approval_id)
@@ -501,6 +544,7 @@ def _apply_owner_approval(
         conn, clock, session_id, "approval.resolved", "owner", "You approved this exact reservation.",
         run_id=ap["run_id"], object_id=approval_id, data={"decision": "approve", "action_hash": seen_hash, "revision": snap.revision},
     )
+    return True
 
 
 def resolve_approval(
@@ -613,7 +657,9 @@ def verify(engine: Engine, clock: Clock, session_id: str, operation_id: str) -> 
         elif verdict == "mismatch":
             summary = "Mismatch: the sandbox record does not match the approved action (" + ", ".join(bad) + ")."
             etype = "receipt.mismatch"
+            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = 'receipt_mismatch', updated_at = :n WHERE run_id = :r", n=clock.now(), r=env.run_id)
         else:
+            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = 'receipt_unknown', updated_at = :n WHERE run_id = :r", n=clock.now(), r=env.run_id)
             summary = "Unknown: the reservation could not be read back. Not reported as complete."
             etype = "receipt.unknown"
         store.append_event(conn, clock, session_id, etype, "verifier", summary, run_id=env.run_id, object_id=receipt_id,

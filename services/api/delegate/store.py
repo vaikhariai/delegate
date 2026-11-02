@@ -249,6 +249,7 @@ def expire_if_due(conn: Connection, clock: Clock, m: dict[str, Any]) -> dict[str
     """Persist expiry for a locked mandate whose lifetime has passed."""
     if m["status"] in ("active", "paused") and m["expires_at"] is not None and clock.now() >= m["expires_at"]:
         exe(conn, "UPDATE mandates SET status = 'expired', updated_at = :n WHERE mandate_id = :m", n=clock.now(), m=m["mandate_id"])
+        _end_live_runs(conn, clock, m["session_id"], "mandate_expired")
         _cancel_pending_approvals(conn, clock, m["session_id"], "mandate expired")
         append_event(conn, clock, m["session_id"], "mandate.expired", "system", "The mandate expired.", object_id=m["mandate_id"])
         m = {**m, "status": "expired"}
@@ -330,6 +331,10 @@ def edit_mandate(engine: Engine, clock: Clock, p: Principal, if_match: int, chan
             raise ApiError(409, "REVISION_CONFLICT", "The mandate changed. Reload and review the latest version.")
         content = {**revision_content(conn, m["mandate_id"], m["current_revision"]), **changes}
         validate_terms(content)
+        if "asking_price_minor" in changes and m["active_revision"] is not None:
+            active = revision_content(conn, m["mandate_id"], m["active_revision"])
+            if changes["asking_price_minor"] != active["asking_price_minor"]:
+                raise ApiError(422, "ASKING_PRICE_FIXED", "The public asking price is fixed once the listing is live. Start a new scenario to change it.")
         new_rev = m["current_revision"] + 1
         exe(
             conn,
@@ -348,6 +353,16 @@ def edit_mandate(engine: Engine, clock: Clock, p: Principal, if_match: int, chan
     return {"mandate_id": m["mandate_id"], "revision": new_rev}
 
 
+def _end_live_runs(conn: Connection, clock: Clock, session_id: str, reason: str) -> int:
+    """Cancel every live run of the session. Caller holds the mandate lock; runs are locked before any event."""
+    return exe(
+        conn,
+        "UPDATE runs SET state = 'cancelled', state_reason = :why, needs_step = false, updated_at = :n "
+        "WHERE session_id = :s AND state NOT IN ('completed', 'failed', 'cancelled')",
+        why=reason, n=clock.now(), s=session_id,
+    )
+
+
 def _cancel_pending_approvals(conn: Connection, clock: Clock, session_id: str, why: str) -> int:
     pend = rows(conn, "SELECT approval_id, action_id, run_id FROM approvals WHERE session_id = :s AND status IN ('pending', 'approved') AND consumed_at IS NULL", s=session_id)
     for a in pend:
@@ -358,6 +373,18 @@ def _cancel_pending_approvals(conn: Connection, clock: Clock, session_id: str, w
             run_id=a["run_id"], object_id=a["approval_id"], owner_only=True,
         )
     return len(pend)
+
+
+def requeue_unanswered(conn: Connection, session_id: str) -> int:
+    """Give live runs whose latest message is from the buyer, or that hold an unused acceptance, a fresh agent step."""
+    return exe(
+        conn,
+        "UPDATE runs r SET needs_step = true WHERE r.session_id = :s AND r.state IN ('running', 'awaiting_buyer', 'waiting_approval') "
+        "AND ((SELECT role FROM marketplace_messages m WHERE m.run_id = r.run_id ORDER BY created_at DESC, message_id DESC LIMIT 1) "
+        "      IN ('buyer', 'system') "
+        "  OR EXISTS (SELECT 1 FROM buyer_events e WHERE e.run_id = r.run_id AND e.kind = 'offer_acceptance' AND e.used_by_action IS NULL))",
+        s=session_id,
+    )
 
 
 def activate(engine: Engine, clock: Clock, p: Principal, revision: int, lifetime_s: int) -> dict[str, Any]:
@@ -373,9 +400,14 @@ def activate(engine: Engine, clock: Clock, p: Principal, revision: int, lifetime
         expires = now + dt.timedelta(seconds=min(lifetime_s, int(content["lifetime_seconds"])))
         cancelled = 0
         if m["active_revision"] is not None and m["active_revision"] != revision:
+            # Runs first (lock order), then approvals and events. Runs with unanswered buyer input get a fresh step.
+            exe(conn, "UPDATE runs SET state = 'awaiting_buyer', updated_at = :n WHERE session_id = :s AND state = 'waiting_approval'",
+                n=now, s=p.session_id)
+            requeue_unanswered(conn, p.session_id)
             cancelled = _cancel_pending_approvals(conn, clock, p.session_id, "your permission changed")
-            # Runs blocked on the old revision get a fresh look under the new terms.
-            exe(conn, "UPDATE runs SET state = 'awaiting_buyer', updated_at = :n WHERE session_id = :s AND state = 'waiting_approval'", n=now, s=p.session_id)
+        else:
+            exe(conn, "UPDATE listings SET asking_price_minor = :a WHERE session_id = :s AND item_id = :i",
+                a=content["asking_price_minor"], s=p.session_id, i=m["item_id"])
         exe(
             conn,
             "UPDATE mandates SET status = 'active', active_revision = :r, activated_at = :n, expires_at = :e, updated_at = :n "
@@ -399,15 +431,11 @@ def set_status(engine: Engine, clock: Clock, p: Principal, action: str) -> dict[
         now = clock.now()
         if action == "revoke":
             if m["status"] in ("revoked", "expired"):
+                _end_live_runs(conn, clock, p.session_id, f"mandate_{m['status']}")
                 return {"status": m["status"], "changed": False}
             exe(conn, "UPDATE mandates SET status = 'revoked', updated_at = :n WHERE mandate_id = :m", n=now, m=m["mandate_id"])
+            _end_live_runs(conn, clock, p.session_id, "mandate_revoked")
             n_cancel = _cancel_pending_approvals(conn, clock, p.session_id, "you revoked authority")
-            exe(
-                conn,
-                "UPDATE runs SET state = 'cancelled', state_reason = 'mandate_revoked', needs_step = false, updated_at = :n "
-                "WHERE session_id = :s AND state NOT IN ('completed', 'failed', 'cancelled')",
-                n=now, s=p.session_id,
-            )
             seq = append_event(
                 conn, clock, p.session_id, "mandate.revoked", "owner",
                 "You revoked the agent's authority. No further messages or reservations can be made. "
@@ -425,6 +453,7 @@ def set_status(engine: Engine, clock: Clock, p: Principal, action: str) -> dict[
             if m["status"] != "paused":
                 raise ApiError(409, "MANDATE_NOT_PAUSED", "Only a paused mandate can be resumed.")
             exe(conn, "UPDATE mandates SET status = 'active', updated_at = :n WHERE mandate_id = :m", n=now, m=m["mandate_id"])
+            requeue_unanswered(conn, p.session_id)
             append_event(conn, clock, p.session_id, "mandate.resumed", "owner", "You resumed the agent.", object_id=m["mandate_id"])
             return {"status": "active", "changed": True}
     raise ApiError(400, "BAD_ACTION", "Unknown mandate action.")
@@ -504,7 +533,8 @@ def buyer_turn(engine: Engine, clock: Clock, p: Principal, run_id: str, text: st
             m=new_id("msg"), s=p.session_id, r=run_id, t=text, e=ev, n=now,
         )
         new_state = run["state"] if run["state"] == "waiting_approval" else "running"
-        exe(conn, "UPDATE runs SET needs_step = true, state = :st, updated_at = :n WHERE run_id = :r", st=new_state, n=now, r=run_id)
+        exe(conn, "UPDATE runs SET needs_step = true, input_seq = input_seq + 1, state = :st, updated_at = :n WHERE run_id = :r",
+            st=new_state, n=now, r=run_id)
         exe(conn, "UPDATE demo_sessions SET buyer_turns = buyer_turns + 1 WHERE session_id = :s", s=p.session_id)
         append_event(
             conn, clock, p.session_id, "buyer.message_received", "buyer", "Buyer message received (untrusted input).",
@@ -548,9 +578,43 @@ def accept_offer(engine: Engine, clock: Clock, p: Principal, run_id: str, offer_
             "VALUES (:m, :s, :r, 'system', :t, :e, :o, :n)",
             m=new_id("msg"), s=p.session_id, r=run_id, t=f"Buyer accepted the offer of {price} (explicit sandbox acceptance).", e=ev, o=offer_id, n=now,
         )
-        exe(conn, "UPDATE runs SET needs_step = true, state = 'running', updated_at = :n WHERE run_id = :r", n=now, r=run_id)
+        exe(conn, "UPDATE runs SET needs_step = true, input_seq = input_seq + 1, state = 'running', updated_at = :n WHERE run_id = :r",
+            n=now, r=run_id)
         append_event(
             conn, clock, p.session_id, "buyer.offer_accepted", "buyer", f"Buyer explicitly accepted the offer of {price}.",
             run_id=run_id, object_id=ev, data={"offer_id": offer_id, "price_minor": int(offer["price_minor"]), "currency": offer["currency"]},
         )
     return {"event_id": ev, "created": True}
+
+
+def sweep(engine: Engine, clock: Clock) -> dict[str, int]:
+    """Close expired mandates and expired pending approvals even when nobody clicks anything.
+
+    Each session is handled in its own transaction in the standard lock order (mandate, then runs, then events).
+    """
+    now = clock.now()
+    done = {"mandates_expired": 0, "approvals_expired": 0}
+    with engine.connect() as conn:
+        due = rows(conn, "SELECT DISTINCT m.session_id FROM mandates m WHERE (m.status IN ('active', 'paused') AND m.expires_at <= :n) "
+                         "OR EXISTS (SELECT 1 FROM approvals a WHERE a.session_id = m.session_id AND a.status = 'pending' AND a.expires_at <= :n)",
+                   n=now)
+    for d in due:
+        with tx(engine) as conn:
+            m = mandate_row(conn, d["session_id"], for_update=True)
+            before = m["status"]
+            m = expire_if_due(conn, clock, m)
+            done["mandates_expired"] += int(before != m["status"])
+            stale = rows(conn, "SELECT approval_id, action_id, run_id FROM approvals WHERE session_id = :s AND status = 'pending' "
+                               "AND expires_at <= :n ORDER BY run_id", s=d["session_id"], n=now)
+            for a in stale:
+                exe(conn, "UPDATE runs SET state = 'awaiting_buyer', needs_step = true, updated_at = :n "
+                          "WHERE run_id = :r AND state = 'waiting_approval'", n=now, r=a["run_id"])
+            for a in stale:
+                exe(conn, "UPDATE approvals SET status = 'expired', resolved_at = :n WHERE approval_id = :ap", n=now, ap=a["approval_id"])
+                exe(conn, "UPDATE proposed_actions SET status = 'cancelled' WHERE action_id = :a AND status = 'waiting_approval'", a=a["action_id"])
+                append_event(conn, clock, d["session_id"], "approval.expired", "system",
+                             "An approval request expired before it was approved. The agent can ask again.",
+                             run_id=a["run_id"], object_id=a["approval_id"], owner_only=True)
+                done["approvals_expired"] += 1
+    return done
+

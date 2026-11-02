@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -70,6 +71,27 @@ class DraftBody(Strict):
     goal: str = Field(max_length=1000)
 
 
+def client_ip(request: Request) -> str:
+    """The address appended by the platform's front end: the right-most X-Forwarded-For hop.
+
+    Left-most entries are client-supplied and must not be trusted for rate limiting.
+    """
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops:
+        return hops[-1]
+    return request.client.host if request.client else "unknown"
+
+
+def _digits(value: str | None, limit: int = 18) -> int | None:
+    v = (value or "").strip().strip('"')
+    if v and v.isascii() and v.isdigit() and len(v) <= limit:
+        return int(v)
+    return None
+
+
+MAX_BODY_BYTES = 5 * 1024 * 1024
+
+
 def create_app(settings: Settings | None = None, clock: Clock | None = None, engine: Engine | None = None,
                start_worker: bool | None = None, adapter: MetaAdapter | None = None) -> FastAPI:
     settings = settings or Settings()
@@ -93,6 +115,19 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
             state["worker"].stop()
 
     app = FastAPI(title="Delegate API", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+    @app.middleware("http")
+    async def limit_body(request: Request, call_next: Callable[[Request], Any]) -> Response:
+        if request.method in ("POST", "PUT", "PATCH"):
+            length = request.headers.get("content-length")
+            chunked = "chunked" in request.headers.get("transfer-encoding", "").lower()
+            too_big = length is not None and (not length.isascii() or not length.isdigit() or int(length) > MAX_BODY_BYTES)
+            if too_big or (length is None and chunked):
+                return JSONResponse(status_code=413 if too_big else 411,
+                                    content={"code": "BODY_SIZE", "message": "Send a Content-Length of at most 5 MB.", "retryable": False,
+                                             "request_id": getattr(request.state, "request_id", None)})
+        response: Response = await call_next(request)
+        return response
 
     def eng() -> Engine:
         e: Engine = state["engine"]
@@ -147,7 +182,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         token = authorization[7:] if authorization and authorization.lower().startswith("bearer ") else None
         return store.authenticate(eng(), clock, token)
 
-    def idempotent(p: store.Principal, key: str | None, route: str, fn: Callable[[], Any], status: int = 200) -> JSONResponse:
+    def idempotent(p: store.Principal, key: str | None, route: str, fn: Callable[[], Any], status: int = 200,
+                   body: Any = None) -> JSONResponse:
         if not key:
             return JSONResponse(status_code=status, content=fn())
         if len(key) > 100:
@@ -156,16 +192,18 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
             lock_conn.execute(text("SELECT pg_advisory_lock(hashtext(:k))"), {"k": f"{p.session_id}:{key}"})
             try:
                 with eng().connect() as c:
-                    hit = one(c, "SELECT route, status_code, response FROM api_idempotency WHERE session_id = :s AND idem_key = :k", s=p.session_id, k=key)
+                    hit = one(c, "SELECT route, status_code, response, request_hash FROM api_idempotency WHERE session_id = :s AND idem_key = :k",
+                          s=p.session_id, k=key)
+                req_hash = hashlib.sha256(json.dumps([route, body], sort_keys=True, default=str).encode()).hexdigest()
                 if hit is not None:
-                    if hit["route"] != route:
+                    if hit["route"] != route or hit["request_hash"] != req_hash:
                         raise store.ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was used for a different request.")
                     return JSONResponse(status_code=hit["status_code"], content=hit["response"], headers={"Idempotent-Replay": "true"})
                 result = fn()
                 with tx(eng()) as c:
-                    exe(c, "INSERT INTO api_idempotency (session_id, idem_key, route, status_code, response, created_at) "
-                           "VALUES (:s, :k, :r, :st, CAST(:resp AS jsonb), :n)",
-                        s=p.session_id, k=key, r=route, st=status, resp=result, n=clock.now())
+                    exe(c, "INSERT INTO api_idempotency (session_id, idem_key, route, status_code, response, created_at, request_hash) "
+                           "VALUES (:s, :k, :r, :st, CAST(:resp AS jsonb), :n, :h)",
+                        s=p.session_id, k=key, r=route, st=status, resp=result, n=clock.now(), h=req_hash)
                 return JSONResponse(status_code=status, content=result)
             finally:
                 lock_conn.execute(text("SELECT pg_advisory_unlock(hashtext(:k))"), {"k": f"{p.session_id}:{key}"})
@@ -207,7 +245,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
 
     @app.post("/v1/demo-sessions", status_code=201)
     def create_session(request: Request) -> dict[str, Any]:
-        ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+        ip = client_ip(request)
         sid, token = store.create_session(eng(), clock, ip, settings.sessions_per_ip_per_hour, settings.session_ttl_s)
         return {"session_id": sid, "token": token, "item_id": store.ITEM_ID}
 
@@ -257,9 +295,10 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     def patch_mandate(mandate_id: str, body: dict[str, Any], p: store.Principal = Depends(principal),
                       if_match: str | None = Header(default=None)) -> dict[str, Any]:
         _check_mandate(p, mandate_id)
-        if if_match is None or not if_match.strip('"').isdigit():
+        rev = _digits(if_match, 6)
+        if rev is None:
             raise store.ApiError(428, "IF_MATCH_REQUIRED", "Send If-Match with the revision you reviewed.")
-        return store.edit_mandate(eng(), clock, p, int(if_match.strip('"')), body)
+        return store.edit_mandate(eng(), clock, p, rev, body)
 
     @app.post("/v1/mandates/{mandate_id}/activate")
     def activate(mandate_id: str, body: ActivateBody, p: store.Principal = Depends(principal)) -> dict[str, Any]:
@@ -318,12 +357,14 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
     def buyer_turn(run_id: str, body: BuyerTurnBody, p: store.Principal = Depends(principal),
                    idempotency_key: str | None = Header(default=None)) -> JSONResponse:
         return idempotent(p, idempotency_key, f"buyer-turns:{run_id}",
-                          lambda: store.buyer_turn(eng(), clock, p, run_id, body.text, settings.max_buyer_turns_per_run), 202)
+                          lambda: store.buyer_turn(eng(), clock, p, run_id, body.text, settings.max_buyer_turns_per_run), 202,
+                          body=body.model_dump())
 
     @app.post("/v1/runs/{run_id}/accept-offer", status_code=202)
     def accept(run_id: str, body: AcceptBody, p: store.Principal = Depends(principal),
                idempotency_key: str | None = Header(default=None)) -> JSONResponse:
-        return idempotent(p, idempotency_key, f"accept:{run_id}", lambda: store.accept_offer(eng(), clock, p, run_id, body.offer_id), 202)
+        return idempotent(p, idempotency_key, f"accept:{run_id}", lambda: store.accept_offer(eng(), clock, p, run_id, body.offer_id), 202,
+                          body=body.model_dump())
 
     @app.post("/v1/runs/{run_id}/resume", status_code=202)
     def resume_run(run_id: str, p: store.Principal = Depends(principal)) -> dict[str, Any]:
@@ -342,7 +383,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         if body.decision not in ("approve", "reject"):
             raise store.ApiError(422, "BAD_DECISION", "Decision must be approve or reject.")
         return idempotent(p, idempotency_key, f"resolve:{approval_id}",
-                          lambda: executor.resolve_approval(eng(), clock, p.session_id, approval_id, body.decision, body.action_hash).as_dict())
+                          lambda: executor.resolve_approval(eng(), clock, p.session_id, approval_id, body.decision, body.action_hash).as_dict(),
+                          body=body.model_dump())
 
     @app.get("/v1/runs/{run_id}/evidence")
     def evidence(run_id: str, view: str = Query("owner", pattern="^(owner|buyer)$"), p: store.Principal = Depends(principal)) -> JSONResponse:
@@ -352,7 +394,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
                             headers={"Content-Disposition": f'attachment; filename="delegate-evidence-{view}-{run_id}.json"'})
 
     @app.get("/v1/events")
-    def session_events(after: int = 0, run_id: str | None = None, p: store.Principal = Depends(principal)) -> dict[str, Any]:
+    def session_events(after: int = Query(0, ge=0, le=10**12), run_id: str | None = None, p: store.Principal = Depends(principal)) -> dict[str, Any]:
         with eng().connect() as c:
             if run_id:
                 store.get_run(c, p.session_id, run_id)
@@ -360,16 +402,27 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
 
     @app.get("/v1/runs/{run_id}/events")
     async def sse(run_id: str, request: Request, p: store.Principal = Depends(principal),
-                  last_event_id: str | None = Header(default=None), after: int = 0) -> StreamingResponse:
+                  last_event_id: str | None = Header(default=None), after: int = Query(0, ge=0, le=10**12)) -> StreamingResponse:
         with eng().connect() as c:
             store.get_run(c, p.session_id, run_id)
-        cursor = int(last_event_id) if last_event_id and last_event_id.isdigit() else after
+        parsed = _digits(last_event_id, 12)
+        cursor: int = parsed if parsed is not None else after
+        token = request.headers.get("authorization", "")[7:]
 
         async def gen() -> AsyncIterator[bytes]:
             nonlocal cursor
             idle = 0.0
+            checked = 0.0
             yield b"retry: 2000\n\n"
             while not await request.is_disconnected():
+                checked += 0.5
+                if checked >= 30:
+                    checked = 0.0
+                    try:
+                        await run_in_threadpool(store.authenticate, eng(), clock, token)
+                    except store.ApiError:
+                        yield b"event: session.ended\ndata: {}\n\n"
+                        return
                 def fetch(after_seq: int = cursor) -> list[dict[str, Any]]:
                     with eng().connect() as c2:
                         return projections.events(c2, p.session_id, after_seq, run_id=run_id, owner=True)

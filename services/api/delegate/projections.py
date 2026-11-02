@@ -92,7 +92,7 @@ def public_context(conn: Connection, session_id: str, run_id: str) -> dict[str, 
     listing = _listing_public(conn, session_id, run["item_id"])
     listing.pop("state")
     feedback = run["last_feedback"]
-    pending = one(conn, "SELECT 1 AS x FROM approvals WHERE run_id = :r AND status = 'pending'", r=run_id) is not None
+    pending = one(conn, "SELECT 1 AS x FROM approvals WHERE run_id = :r AND status = 'pending' AND expires_at > now()", r=run_id) is not None
     return {
         "listing": listing,
         "buyer_display_name": run["buyer_display_name"],
@@ -133,7 +133,14 @@ def mandate_owner_view(conn: Connection, session_id: str) -> dict[str, Any]:
         "terms": current,
         "active_terms": active,
         "has_unactivated_changes": m["active_revision"] is not None and m["active_revision"] != m["current_revision"],
+        "revoked_at": _last_event_at(conn, session_id, "mandate.revoked"),
+        "paused_at": _last_event_at(conn, session_id, "mandate.paused") if m["status"] == "paused" else None,
     }
+
+
+def _last_event_at(conn: Connection, session_id: str, event_type: str) -> str | None:
+    r = one(conn, "SELECT max(occurred_at) AS t FROM audit_events WHERE session_id = :s AND event_type = :e", s=session_id, e=event_type)
+    return r["t"].isoformat() if r and r["t"] else None
 
 
 def owner_run_view(conn: Connection, session_id: str, run_id: str) -> dict[str, Any]:
@@ -147,8 +154,10 @@ def owner_run_view(conn: Connection, session_id: str, run_id: str) -> dict[str, 
     import json
 
     pending = None
+    import datetime as _dt
+
     for a in approvals:
-        if a["status"] == "pending":
+        if a["status"] == "pending" and a["expires_at"] > _dt.datetime.now(_dt.timezone.utc):
             body = json.loads(a["canonical_body"])
             p = body["payload"]
             pending = {

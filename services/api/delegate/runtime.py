@@ -28,7 +28,7 @@ from delegate.settings import Settings
 
 log = logging.getLogger("delegate.runtime")
 
-LEASE_S = 120
+LEASE_S = 300
 STOP_CODES = {"FENCE_STALE", "RUN_NOT_LIVE", "MANDATE_REVOKED", "MANDATE_PAUSED", "MANDATE_EXPIRED", "MANDATE_NOT_ACTIVE", "OUT_OF_SCOPE"}
 
 Proposer = Callable[[dict[str, Any]], dict[str, Any]]
@@ -45,16 +45,19 @@ def claim(engine: Engine, clock: Clock, worker_id: str, run_id: str | None = Non
     with tx(engine) as conn:
         pick = one(
             conn,
-            "SELECT run_id FROM runs WHERE needs_step AND state IN ('running', 'awaiting_buyer', 'waiting_approval', 'blocked') "
-            "AND (lease_until IS NULL OR lease_until < :n)" + (" AND run_id = :rid" if run_id else "") +
-            " ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED",
+            "SELECT r.run_id FROM runs r JOIN mandates m ON m.mandate_id = r.mandate_id "
+            "WHERE r.needs_step AND r.state IN ('running', 'awaiting_buyer', 'waiting_approval', 'blocked') "
+            "AND m.status = 'active' AND (r.lease_until IS NULL OR r.lease_until < :n)"
+            + (" AND r.run_id = :rid" if run_id else "") +
+            " ORDER BY r.updated_at LIMIT 1 FOR UPDATE OF r SKIP LOCKED",
             n=now, rid=run_id,
         )
         if pick is None:
             return None
         return one(
             conn,
-            "UPDATE runs SET lease_owner = :w, lease_until = :lu, fence = fence + 1, updated_at = :n WHERE run_id = :r RETURNING *",
+            "UPDATE runs SET lease_owner = :w, lease_until = :lu, fence = fence + 1, claimed_input_seq = input_seq, updated_at = :n "
+            "WHERE run_id = :r RETURNING *",
             w=worker_id, lu=now + dt.timedelta(seconds=LEASE_S), n=now, r=pick["run_id"],
         )
 
@@ -120,7 +123,6 @@ def _event(engine: Engine, clock: Clock, run: dict[str, Any], etype: str, actor:
 def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapter, run: dict[str, Any]) -> str:
     """Process one claimed step. Returns a short outcome label."""
     fence = int(run["fence"])
-    claimed_at = clock.now()
     step_no = int(run["next_step"])
     session_id, run_id = run["session_id"], run["run_id"]
     outcome = "idle"
@@ -141,6 +143,15 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
                 sess is not None and int(sess["provider_calls"]) >= settings.max_provider_calls_per_session
             ):
                 outcome = "budget_exhausted"
+                break
+            m = store.mandate_row(conn, session_id)
+            if m["status"] != "active" or (m["expires_at"] is not None and clock.now() >= m["expires_at"]):
+                outcome = "mandate_not_active"
+                break
+            day = one(conn, "SELECT count(*) AS n FROM provider_calls WHERE mode = 'live' AND created_at > :t",
+                      t=clock.now() - dt.timedelta(hours=24))
+            if day is not None and int(day["n"]) >= settings.max_live_calls_per_day:
+                outcome = "global_budget_exhausted"
                 break
             ctx = public_context(conn, session_id, run_id)
         origin = "live" if adapter.mode == "live" else adapter.mode
@@ -176,15 +187,19 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
                                        run_id=run_id, data={"code": exc.code, "retryable": exc.retryable})
             return "provider_error"
         call_id = _record_calls(engine, clock, run, step_no, calls)
+        if not _extend(engine, clock, run_id, fence):
+            return "fence_lost"
         if raw is None:
             raw = '{"__empty__": true}'
         action_id = executor.persist_proposal(engine, clock, session_id, run_id, step_no, attempt, raw, origin, call_id)
         res = executor.execute(engine, clock, session_id, action_id, fence=fence)
         _event(engine, clock, run, "model.completed", "agent", f"Agent step finished: {res.status}.",
                {"action_id": action_id, "verdict": res.verdict, "reason_code": res.reason_code})
+        if res.reason_code == "FENCE_STALE":
+            return "fence_lost"  # another worker owns the run now; leave needs_step and state to it
         if res.verdict == "invalid":
             with tx(engine) as conn:
-                exe(conn, "UPDATE runs SET invalid_corrections = invalid_corrections + 1 WHERE run_id = :r", r=run_id)
+                exe(conn, "UPDATE runs SET invalid_corrections = invalid_corrections + 1 WHERE run_id = :r AND fence = :f", r=run_id, f=fence)
             outcome = "invalid"
             continue
         if res.verdict == "deny":
@@ -199,24 +214,32 @@ def process(engine: Engine, clock: Clock, settings: Settings, adapter: MetaAdapt
         outcome = res.status
         break
     with tx(engine) as conn:
-        newer = one(conn, "SELECT 1 AS x FROM buyer_events WHERE run_id = :r AND created_at > :c", r=run_id, c=claimed_at)
-        if outcome == "budget_exhausted":
-            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = 'model_budget_exhausted', updated_at = :n WHERE run_id = :r AND fence = :f",
-                n=clock.now(), r=run_id, f=fence)
+        # Lock the run first: buyer input and this release serialize on the row, and input_seq decides atomically.
+        mine = one(conn, "SELECT fence FROM runs WHERE run_id = :r FOR UPDATE", r=run_id)
+        if mine is None or int(mine["fence"]) != fence:
+            return "fence_lost"
+        if outcome == "mandate_not_active":
+            exe(conn, "UPDATE runs SET lease_owner = NULL, lease_until = NULL WHERE run_id = :r", r=run_id)
+            return outcome  # needs_step stays set; the run is picked up again when the mandate is active
+        if outcome in ("budget_exhausted", "global_budget_exhausted"):
+            why = "model_budget_exhausted" if outcome == "budget_exhausted" else "demo_daily_budget_exhausted"
+            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = :why, updated_at = :n WHERE run_id = :r", why=why, n=clock.now(), r=run_id)
             store.append_event(conn, clock, session_id, "run.state_changed", "system",
-                               "This demo negotiation used its model budget. Start a new scenario to continue.", run_id=run_id)
+                               "This demo negotiation used its model budget. Start a new scenario to continue."
+                               if outcome == "budget_exhausted" else
+                               "The public demo reached its daily model budget. Please try again tomorrow.", run_id=run_id)
         if outcome in ("invalid", "denied"):
-            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = :why, updated_at = :n WHERE run_id = :r AND fence = :f "
+            exe(conn, "UPDATE runs SET state = 'blocked', state_reason = :why, updated_at = :n WHERE run_id = :r "
                       "AND state IN ('running', 'awaiting_buyer')",
-                why="agent_could_not_find_allowed_action", n=clock.now(), r=run_id, f=fence)
+                why="agent_could_not_find_allowed_action", n=clock.now(), r=run_id)
             store.append_event(conn, clock, session_id, "run.state_changed", "agent",
                                "The agent could not find an allowed reply within its retry limit. Send another buyer message or retry.",
                                run_id=run_id, owner_only=True)
-        exe(conn, "UPDATE runs SET needs_step = CASE WHEN :newer THEN needs_step ELSE false END, next_step = next_step + 1, "
+        exe(conn, "UPDATE runs SET needs_step = (input_seq <> COALESCE(claimed_input_seq, -1)), next_step = next_step + 1, "
                   "lease_owner = NULL, lease_until = NULL, "
                   "state = CASE WHEN state = 'running' THEN 'awaiting_buyer' ELSE state END, updated_at = :n "
-                  "WHERE run_id = :r AND fence = :f",
-            newer=newer is not None, n=clock.now(), r=run_id, f=fence)
+                  "WHERE run_id = :r",
+            n=clock.now(), r=run_id)
     return outcome
 
 
@@ -226,6 +249,7 @@ class Worker:
         self._stop = threading.Event()
         self._threads = [threading.Thread(target=self._loop, args=(i,), daemon=True, name=f"delegate-worker-{i}") for i in range(n_threads)]
         self._last_cleanup = 0.0
+        self._last_sweep = 0.0
 
     def start(self) -> None:
         for t in self._threads:
@@ -240,6 +264,9 @@ class Worker:
         worker_id = f"w{idx}-{new_id('wk')}"
         while not self._stop.is_set():
             try:
+                if idx == 0 and time.monotonic() - self._last_sweep > 10:
+                    self._last_sweep = time.monotonic()
+                    store.sweep(self.engine, self.clock)
                 if idx == 0 and time.monotonic() - self._last_cleanup > 600:
                     self._last_cleanup = time.monotonic()
                     store.cleanup_expired(self.engine, self.clock)

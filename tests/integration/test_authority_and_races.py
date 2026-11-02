@@ -11,12 +11,12 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
-from sqlalchemy.exc import OperationalError
-
 from delegate import executor, runtime
 from delegate.clock import Clock
 from delegate.db import exe, one, rows, tx
+from sqlalchemy import Engine
+from sqlalchemy.exc import OperationalError
+
 from tests.integration.helpers import Harness
 
 
@@ -140,11 +140,10 @@ def test_pause_blocks_and_resume_restores(h: Harness) -> None:
     run_id = h.start_run()
     assert h.client.post(f"/v1/mandates/{mid}/pause", headers=h.h()).status_code == 200
     assert h.say(run_id, "How much memory?").status_code == 202  # buyers can still write while the agent is paused
-    assert h.step(run_id) in ("stale", "run_not_live")
+    assert runtime.claim(h.engine, h.clock, "w-paused", run_id) is None  # no model call while paused
     assert [c for c in h.run_view(run_id)["conversation"] if c["role"] == "seller"] == []
     assert h.client.post(f"/v1/mandates/{mid}/resume", headers=h.h()).status_code == 200
-    h.say(run_id, "How much memory?")
-    assert h.step(run_id) == "succeeded"
+    assert h.step(run_id) == "succeeded"  # the waiting message is answered after resume
 
 
 # ------------------------------------------------------------------ D17–D20 stale approvals

@@ -12,12 +12,12 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import Engine
-
 from delegate.clock import Clock
 from delegate.meta_adapter import MetaAdapter
 from delegate.settings import Settings
 from delegate.store import FIXTURE
+from sqlalchemy import Engine
+
 from tests.integration.helpers import Harness
 
 PRIVATE = [FIXTURE["seller_private"]["exact_address"], FIXTURE["seller_private"]["phone"], FIXTURE["seller_private"]["notes"],

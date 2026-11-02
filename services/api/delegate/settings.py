@@ -44,6 +44,7 @@ class Settings:
     approval_lifetime_s: int = 120
     max_provider_calls_per_run: int = 24
     max_provider_calls_per_session: int = 60
+    max_live_calls_per_day: int = field(default_factory=lambda: _int("DELEGATE_MAX_LIVE_CALLS_PER_DAY", 1500))
     max_provider_calls_per_step: int = 4
     max_previews_per_step: int = 2
     max_invalid_corrections: int = 2

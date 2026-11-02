@@ -23,4 +23,4 @@ COPY --from=web /web/dist ./apps/web/dist
 RUN useradd --create-home --uid 10001 delegate && chown -R delegate /srv
 USER delegate
 EXPOSE 8080
-CMD ["/srv/.venv/bin/uvicorn", "delegate.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-server-header", "--app-dir", "/srv/services/api", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["/srv/.venv/bin/uvicorn", "delegate.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--no-server-header", "--app-dir", "/srv/services/api"]

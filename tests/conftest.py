@@ -7,7 +7,6 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
