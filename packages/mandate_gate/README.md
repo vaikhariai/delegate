@@ -4,6 +4,14 @@ Deterministic, ordered authorization checks and exact-action approval binding fo
 
 An agent framework lets a model *propose* a tool call. `mandate-gate` is the small piece that decides, outside the model, whether that specific action may run now under the authority a human granted, and whether a human approval really covers it. It has no dependencies.
 
+## Install
+
+```bash
+pip install "mandate-gate @ git+https://github.com/vaikhariai/delegate#subdirectory=packages/mandate_gate"
+```
+
+Python 3.11 or newer, no dependencies. Not yet published to PyPI.
+
 ## What it gives you
 
 - **`Gate`**: an ordered list of named checks. Each returns `None` (pass) or an `Outcome` (`deny`, `invalid`, `approval_required`, or an early `allow`). The first decisive outcome wins, so check order is explicit and testable. The `Decision` records which check decided and which passed.
