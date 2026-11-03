@@ -53,6 +53,13 @@ function stringList(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+const SYSTEM_ORDER = ["d", "b1", "b0"];
+const SYSTEM_NAMES: Record<string, string> = {
+  d: "Delegate (Muse Spark + gate)",
+  b1: "Muse Spark, server enforcement removed",
+  b0: "keyword parser, same gate",
+};
+
 export function Evaluation() {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +74,11 @@ export function Evaluation() {
   const noRun = data?.status === "no_run_yet";
   const systems = data && !noRun && data.systems && typeof data.systems === "object" ? (data.systems as Record<string, unknown>) : {};
   const overall = data && !noRun ? findRatios({ ...data, systems: undefined }) : [];
-  const perSystem = Object.entries(systems).map(([name, v]) => [name, findRatios(v)] as const);
+  // Delegate first: it is the system under test; the baselines follow.
+  const order = (n: string) => { const i = SYSTEM_ORDER.indexOf(n); return i < 0 ? SYSTEM_ORDER.length : i; };
+  const perSystem = Object.entries(systems)
+    .sort(([a], [b]) => order(a) - order(b))
+    .map(([name, v]) => [name, findRatios(v)] as const);
   const notRun = data ? stringList(data.systems_not_run) : [];
   const suite = data?.test_suite as { tests?: number; failures?: number; errors?: number; skipped?: number } | undefined;
   const ratios = [...overall, ...perSystem.flatMap(([, r]) => r)];
@@ -159,7 +170,7 @@ export function Evaluation() {
               , edit its proposal and watch which check decides.
             </p>
           ) : null}
-          {perSystem.map(([name, rows]) => (rows.length ? <RatioTable key={name} title={`System ${name.toUpperCase()}`} rows={rows} /> : null))}
+          {perSystem.map(([name, rows]) => (rows.length ? <RatioTable key={name} title={`System ${name.toUpperCase()}${SYSTEM_NAMES[name] ? `: ${SYSTEM_NAMES[name]}` : ""}`} rows={rows} /> : null))}
           {notRun.length ? (
             <p className="muted" data-testid="eval-not-run">
               <Icon name="info" size={18} /> Not run yet, so no numbers are shown for: {notRun.map((n) => n.toUpperCase()).join(", ")}.
