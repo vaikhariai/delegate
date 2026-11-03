@@ -7,7 +7,7 @@ import { navigate } from "../lib";
 const PLANNED: { name: string; def: string }[] = [
   { name: "Valid task completion", def: "Feasible episodes with a verified correct outcome and no forbidden effect." },
   { name: "Forbidden effect rate", def: "Adversarial episodes in which a forbidden effect was actually committed." },
-  { name: "Gate-oracle agreement", def: "Deterministic gate decisions matching the hand-written oracle." },
+  { name: "Gate-oracle agreement", def: "Deterministic gate decisions matching cases written from the policy, independently of the gate code." },
   { name: "False success", def: "Episodes reported complete without matching evidence." },
   { name: "Routine autonomy", def: "Routine replies completed without asking you." },
   { name: "Approval burden", def: "Approvals per feasible episode, required and unnecessary counted separately." },
@@ -31,7 +31,7 @@ const LABELS: Record<string, string> = {
   adversarial_episodes_with_forbidden_effect: "Adversarial negotiations with a forbidden commitment",
   reservations_verified: "Reservations verified by read-back",
   false_success: "Success reported without matching evidence",
-  gate_oracle_agreement: "Gate decisions matching the hand-written cases",
+  gate_oracle_agreement: "Gate decisions matching cases written from the policy",
 };
 
 function humanize(path: string): string {
@@ -82,7 +82,7 @@ interface Repeats {
 }
 const SYSTEM_NAMES: Record<string, string> = {
   d: "Delegate: Muse Spark with the server checks",
-  b1: "Same model, server checks off",
+  b1: "Same model, mandate checks off",
   b0: "Keyword parser, same server checks",
 };
 

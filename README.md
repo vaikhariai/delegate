@@ -73,7 +73,7 @@ Small and mid-size sellers who list many items on peer marketplaces and want an 
 - **Embedded database, one instance.** PostgreSQL runs inside the single Cloud Run instance (`pgserver`); state is lost if the instance restarts, and demo sessions expire after 24 hours anyway.
 - **Anonymous sessions.** Each visitor gets a per-session bearer token; there are no accounts or sign-in.
 - **Simulated buyer channel** (see above).
-- **Small evaluation.** 52 scripted probes per system, written for this project; a pilot, not a statistical estimate.
+- **Small evaluation, and what it can show.** 27 scenarios in English and Hinglish (54 probes, 52 run live), written for this project; a pilot, not a statistical estimate. The "same model, mandate checks off" baseline keeps the fixed templates, so it cannot show the address or "Yep, I'm here" failures; those protections are structural and tested separately. Two of its three main-run failures are missing approvals it cannot avoid by construction; the genuine signal is scam-buyer reservations (1 in the main run, 7 in the repeats). No live run came near the price floor (lowest committed price $550, floor $500), so the floor is evidenced by the gate cases and property tests. The gate itself refused a live reservation 4 times in Delegate's 106 episodes; the model declined the rest by itself. Details: `evaluation/LIVE_FINDINGS.md`.
 
 The upgrade path (Cloud SQL with backups, real sign-in, more than one instance, a live business number) is in `docs/OPERATIONS.md`.
 

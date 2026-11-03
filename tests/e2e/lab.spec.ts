@@ -21,7 +21,7 @@ test("gate lab lists every case, filters by family, and replays an edited propos
   await page.getByTestId("eval-open-lab").click();
   await expect(page).toHaveURL(/\/lab/);
   await expect(page.getByTestId("lab-evidence-mode")).toHaveText("SYNTHETIC_FIXTURE");
-  await expect(page.getByTestId("lab-summary")).toContainText("151/151 match the hand-written expectation");
+  await expect(page.getByTestId("lab-summary")).toContainText("151/151 match the expectation written from the policy");
   const rows = page.locator("[data-testid^=lab-case-]");
   expect(await rows.count()).toBeGreaterThanOrEqual(151);
   await expect(page.getByTestId("lab-count")).toContainText("of 151 cases");

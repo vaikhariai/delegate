@@ -69,7 +69,7 @@ def list_cases() -> dict[str, Any]:
                     "actual": {"verdict": t["verdict"], "reason_code": t["reason_code"]}, "decided_by": t["decided_by"],
                     "pass": t["verdict"] == exp["verdict"] and t["reason_code"] == exp["reason_code"]})
     families = {f["id"]: f["title"] for f in _harness().oracle.load_families()}
-    return {"evidence_mode": "SYNTHETIC_FIXTURE", "note": "Deterministic replay of frozen hand-written cases; no model involved.",
+    return {"evidence_mode": "SYNTHETIC_FIXTURE", "note": "Deterministic replay of frozen cases written from the policy document, independently of the gate code; no model involved.",
             "families": families, "cases": out,
             "summary": {"total": len(out), "passed": sum(1 for c in out if c["pass"])}}
 

@@ -221,16 +221,16 @@ export function Lab() {
         <div>
           <p className="eyebrow">Evidence · Gate lab</p>
           <h1>Gate lab</h1>
-          <p className="sub">Deterministic replay of {summary?.total ?? 151} hand-written cases · no model involved.</p>
+          <p className="sub">Deterministic replay of {summary?.total ?? 151} cases written from the policy · no model involved.</p>
         </div>
         <div className="row gap wrap">
-          <span className="prov-chip prov-synthetic_fixture" data-testid="lab-evidence-mode" title="Hand-written fixture cases, not live traffic">
+          <span className="prov-chip prov-synthetic_fixture" data-testid="lab-evidence-mode" title="Fixture cases, not live traffic">
             {list?.evidence_mode ?? "SYNTHETIC_FIXTURE"}
           </span>
           {summary ? (
             <span className={`status-pill ${summary.passed === summary.total ? "status-active" : "status-revoked"}`} data-testid="lab-summary">
               <Icon name={summary.passed === summary.total ? "checkCircle" : "alert"} size={18} />
-              {summary.passed}/{summary.total} match the hand-written expectation
+              {summary.passed}/{summary.total} match the expectation written from the policy
             </span>
           ) : null}
         </div>
@@ -350,7 +350,7 @@ export function Lab() {
                 </h2>
                 <div className="lab-expect">
                   <span>
-                    Expected (hand-written): <VerdictChip verdict={detail.expected.verdict} testid="lab-expected" />{" "}
+                    Expected (from the policy): <VerdictChip verdict={detail.expected.verdict} testid="lab-expected" />{" "}
                     <code>{detail.expected.reason_code ?? "no code"}</code>
                   </span>
                   <span>
