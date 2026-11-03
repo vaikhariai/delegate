@@ -67,6 +67,7 @@ What exists today, stated plainly:
 
 Small and mid-size sellers who list many items on peer marketplaces and want an agent to handle the haggling without giving it their address or their floor price; and platforms whose trust and safety teams need agent controls they can audit. The wedge is the incident above: agent selling is arriving, and a seller has to be able to prove what the agent was and was not allowed to do. Pricing idea (not validated): free for a handful of delegated sales a month, then a small fee per delegated sale for power sellers, and a licence for platforms embedding `mandate-gate`.
 
+
 ## Limits of this release
 
 - **Sandbox only.** Fictional item, people and money; a reservation is not a sale, payment or handover.
@@ -74,6 +75,16 @@ Small and mid-size sellers who list many items on peer marketplaces and want an 
 - **Anonymous sessions.** Each visitor gets a per-session bearer token; there are no accounts or sign-in.
 - **Simulated buyer channel** (see above).
 - **Small evaluation, and what it can show.** 27 scenarios in English and Hinglish (54 probes, 52 run live), written for this project; a pilot, not a statistical estimate. The "same model, mandate checks off" baseline keeps the fixed templates, so it cannot show the address or "Yep, I'm here" failures; those protections are structural and tested separately. Two of its three main-run failures are missing approvals it cannot avoid by construction; the genuine signal is scam-buyer reservations (1 in the main run, 7 in the repeats). No live run came near the price floor (lowest committed price $550, floor $500), so the floor is evidenced by the gate cases and property tests. The gate itself refused a live reservation 4 times in Delegate's 106 episodes; the model declined the rest by itself. Details: `evaluation/LIVE_FINDINGS.md`.
+- **Approvals expire after two minutes.** If the seller does not approve in time, the request lapses and the agent asks again, within the 24-call budget of the negotiation and the 30-minute mandate. A real seller is not watching a console; the real-world path is an approval link or passkey prompt on the seller's phone with a longer window.
+- **One person plays both roles.** In the demo the buyer and the seller share one session token. Approval is a separate route bound to the action hash and the owner, but a real deployment would give the buyer channel no owner token at all.
+- **A scam flag cannot be overridden.** If the model or the scanner flags a buyer, no reservation is possible for that buyer in that negotiation, even with the seller's approval (by policy). The buyer is not told why; the seller's only option is a new scenario. The same buyer also cannot reserve again after a hold lapses; another buyer can.
+- **Waiting.** Live replies take 5 to 30 seconds; the buyer pane only says the agent is reading the conversation.
+- **Narrow model use.** One read-only tool (`preview_action`), one preview per step; the listing and the open offer are already in the model's context. The tool deliberately ignores the private minimum so it cannot be used to probe it. The prompt says the model may preview "once or twice"; the server allows one, and a second call gets an error reply. The prompt is frozen because the evaluation ran on it.
+- **Floor inference.** A buyer can learn roughly one bit per message about the floor from whether the agent counters higher, as with a human seller (`docs/POLICY.md` §7).
+- **Cost.** `reasoning_effort` is low, but each call still spends about 700 to 1,100 reasoning tokens; reasoning dominates per-step cost.
+- **One item, two buyers.** The demo is one listing; nothing yet shows a seller with many listings and many buyers.
+- **Evaluated code versus deployed code.** The deployed release adds the prose-to-JSON recovery (`docs/DECISIONS.md` #18) after the live evaluation ran; the evaluation was not rerun.
+- **Small details.** Duplicate proposals are recognised before the remaining checks run, so the executor reports "duplicate" where the pure gate would report the first failing check (no effect on outcomes); SSE stream counts live in process memory (fine for one instance); accessibility and phone layouts are checked by automated axe and Playwright tests at 360 to 1280 px, not by user testing.
 
 The upgrade path (Cloud SQL with backups, real sign-in, more than one instance, a live business number) is in `docs/OPERATIONS.md`.
 

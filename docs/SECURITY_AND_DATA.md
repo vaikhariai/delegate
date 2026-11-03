@@ -9,7 +9,7 @@ In scope: a malicious buyer (prompt injection, authority claims, scams), a malfo
 | Boundary | Control | Test |
 | --- | --- | --- |
 | Session identity | Opaque 256-bit bearer token, stored as SHA-256; every query filtered by the authenticated session; other sessions' IDs return 404 | `test_cross_session_access_is_404` |
-| Buyer vs owner | Buyer text is stored as untrusted data and only reaches the model inside the conversation; owner operations are separate routes | `test_late_model_output_after_revocation_is_stale`, gate cases D11–D13 |
+| Buyer vs owner | Buyer text is stored as untrusted data and only reaches the model inside the conversation; owner operations are separate routes. In the demo one person plays both roles, so both use the same session token; a real deployment would give the buyer channel no owner token (the WhatsApp adapter has none) | `test_late_model_output_after_revocation_is_stale`, gate cases D11–D13 |
 | Private terms vs model and buyer | Explicit projections; private address, phone and notes live in a separate table never joined into public views; canary strings checked in the exact provider request body | `test_model_request_contains_no_private_values`, `test_buyer_view_and_buyer_evidence_have_no_private_values` |
 | Model vs execution | Strict parser, ten ordered gate checks, fixed templates, final recheck under lock | 151 frozen gate cases; integration tests |
 | Approval vs mutation | Hash, revision, owner, expiry, single use, consumed in the effect transaction | `test_changed_hash_cannot_approve`, `test_expired_approval_cannot_execute`, `test_concurrent_double_approval_reserves_once` |
@@ -18,7 +18,7 @@ In scope: a malicious buyer (prompt injection, authority claims, scams), a malfo
 | Abuse | New sessions per network per hour, buyer turns per run, provider calls per run and session, global provider concurrency | `test_session_creation_is_rate_limited` |
 | Secrets | Meta key server-side only, from Secret Manager in production; never logged or exported | provider evidence test checks the export |
 
-| Spend | Every live provider request first reserves one call atomically against the run (24), session (60) and daily (`DELEGATE_MAX_LIVE_CALLS_PER_DAY`, 1500) caps; failed calls are recorded too; the daily counter survives session deletion | `tests/integration/test_adversarial_fixes.py` |
+| Spend | Every live provider request first reserves one call atomically against the run (24), session (60) and daily (`DELEGATE_MAX_LIVE_CALLS_PER_DAY`, 3000 on the deployment) caps; failed calls are recorded too; the daily counter survives session deletion | `tests/integration/test_adversarial_fixes.py` |
 | Scam text | Scanner normalizes NFKC, lookalike letters, invisible characters and digits inside words, covers English, Hinglish and Devanagari phrasings, and also scans the last three buyer messages together; the model's signals are added and shown to the owner | 19 bypasses caught, 18 ordinary messages not flagged, 0/34 legitimate probes flagged |
 | Text safety | Control characters and unpaired surrogates rejected; zero-width and bidi characters stripped at ingest; database errors never log bound values | `test_control_and_format_characters` |
 
@@ -29,3 +29,8 @@ Known limits: the private minimum never appears in buyer or model channels, and 
 All listing, people and prices are fictional (`fixtures/demo_case.json`). Visitors type buyer messages and may record a voice note for the mandate draft. Voice notes are sent to the Meta Model API (Standard mode) for that one request and are not stored by the application; the transcript returned by the model is shown to the owner and not persisted beyond the draft response. Sessions and all their rows are deleted on "Reset" or 24 hours after creation. Google Cloud request logs for the service record client IP addresses and paths under Google Cloud's default retention; the application's own structured logs record timings, status codes and hashed session references, never message contents, tokens or private values (tested in `tests/integration/test_observability.py`).
 
 Do not enter real personal information in the demo.
+
+## Known limits
+
+- Approval requests and proposed actions expire after 120 seconds. If the seller does not approve in time, the request lapses, the negotiation is queued again and the agent may propose the reservation again, bounded by the 24-call run budget and the 30-minute mandate lifetime.
+- In the demo, buyer and seller share one session token because one person plays both roles. The approval route is separate and bound to the action hash and the owner principal; a real deployment issues the buyer channel no owner token.
