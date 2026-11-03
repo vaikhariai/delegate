@@ -348,7 +348,7 @@ export function Workspace() {
                     <span className="bubble">{m.text}</span>
                     {m.role === "seller" ? (
                       <span className="msg-foot">
-                        <Icon name="shieldCheck" size={14} /> Reviewed template{m.offer_id ? " · offer" : ""}
+                        <Icon name="shieldCheck" size={14} /> Fixed template{m.offer_id ? " · offer" : ""}
                       </span>
                     ) : null}
                   </>

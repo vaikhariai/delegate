@@ -436,7 +436,7 @@ export function Setup() {
               <li>
                 Counter between <strong>{money(parsed.min)}</strong> and <strong>{money(parsed.asking)}</strong>.
               </li>
-              <li>Decline unsafe or out-of-policy requests with fixed, reviewed wording.</li>
+              <li>Decline unsafe or out-of-policy requests with fixed wording.</li>
               <li>
                 Ask you to approve one reservation, held <strong>{form.hold || "—"} minutes</strong>, after the buyer taps Accept offer.
               </li>

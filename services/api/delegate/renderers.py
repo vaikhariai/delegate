@@ -1,6 +1,6 @@
 """Fixed buyer-facing templates. Model text never reaches the buyer; only these strings and public facts do.
 
-Every template is reviewed text. Variables are limited to a formatted price and public fact texts looked up
+Every template is fixed text. Variables are limited to a formatted price and public fact texts looked up
 by ID from the listing's public facts. No template mentions a minimum price, address, phone or notes.
 """
 
