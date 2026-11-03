@@ -2684,3 +2684,114 @@ textarea[aria-invalid="true"] {
   letter-spacing: 0;
   text-transform: none;
 }
+
+/* ------------------------------------------------------------------ start: where it fits, incident map */
+.fits {
+  margin-top: 48px;
+}
+.fits h2,
+.lessons h2 {
+  font-size: 1.35rem;
+  margin-bottom: 14px;
+}
+.fits-flow {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 36px;
+}
+.fits-box {
+  position: relative;
+  background: var(--surface);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.fits-box.fits-here {
+  border: 1px solid var(--accent-line);
+  box-shadow: var(--shadow);
+}
+.fits-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.fits-head h3 {
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+.fits-box p {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.fits-box p.fits-tag {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fits-arrow {
+  position: absolute;
+  right: -30px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+.fits-note {
+  margin-top: 14px;
+  color: var(--ink-2);
+  max-width: 920px;
+}
+.lessons {
+  margin-top: 40px;
+  max-width: 1100px;
+}
+.lessons-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.lessons-table th,
+.lessons-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  font-size: 0.95rem;
+}
+.lessons-table th {
+  background: var(--surface-2);
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lessons-table td:first-child {
+  color: var(--ink-2);
+  width: 38%;
+}
+@media (max-width: 767px) {
+  .fits-flow {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .fits-arrow {
+    right: auto;
+    left: 50%;
+    top: auto;
+    bottom: -26px;
+    transform: translateX(-50%) rotate(90deg);
+  }
+  .lessons-table td:first-child {
+    width: auto;
+  }
+}

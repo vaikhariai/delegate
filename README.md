@@ -15,7 +15,14 @@ Everything is fictional and sandboxed: no real listings, payments or people. No 
 
 Delegate is a working prototype of agent commerce that holds up in production. A seller hands a fictional used-laptop sale to an agent under an explicit mandate: asking price, a private minimum, pickup only, cash at pickup, which facts may be shared, and a 30-minute lifetime. A Meta Muse Spark model reads the public conversation and proposes typed actions. The server decides whether each action may run. Buyers only ever see fixed template text. A reservation needs the buyer's explicit "Accept offer" click and the seller's approval of that exact action. The server then reads the reservation back and shows a verified receipt. The seller can pause or revoke at any moment.
 
-Why now: in September 2026 a seller reported that a consumer AI agent handling his Marketplace messages accepted a lowball offer, shared his building address and told a buyer "Yep I'm here" without asking him (Fortune, 19 Oct 2026; TechRepublic; Malwarebytes). Delegate is the controls layer for that situation: limits the model cannot talk its way past, approval bound to the exact commitment, and evidence.
+Why now: in September 2026 a Toronto seller let Meta's Muse agent run his Facebook Marketplace listings for a day. He reported that it shared his street address with buyers through a reply template he had allowed with "Allow always", agreed to a price $100 under the minimum he had set, and answered a buyer at his door with "Yep I'm here!" while he was out. Meta acknowledged the pricing error to AP and said Muse "can still make mistakes or take unexpected actions". Sources: [AP via KSL](https://www.ksl.com/article/51638011/ai-agents-are-only-as-good-as-the-personal-information-you-share-that-raises-privacy-concerns), [Fortune, 19 Oct 2026](https://fortune.com/2026/10/19/meta-muse-ai-agent-facebook-marketplace-home-address-privacy/), [Moneywise](https://moneywise.com/news/top-stories/matt-robb-meta-muse-facebook-marketplace-deal). The model was capable; what was missing was a control layer the agent cannot talk its way past. Delegate is that layer, built on Muse Spark and open-sourced as `mandate-gate`:
+
+| Reported | What Delegate does instead |
+| --- | --- |
+| Agreed to a price under the seller's minimum | The private minimum is checked by the server on every counter and reservation; the model never sees it |
+| Shared the street address through an allowed reply template | No template contains the seller's address; buyers only see the public pickup area |
+| Replied "Yep I'm here!" on the seller's behalf | The model cannot write buyer-facing text; replies are fixed templates and none claims the seller is present |
+| An approved setting was treated as approval of each action | Approval binds one exact reservation (buyer, price, pickup, hold) by a hash the server recomputes before executing |
 
 > Everything here is a sandbox: fictional item, people and money in an application-owned marketplace. A reservation is not a sale, a payment or a handover.
 
@@ -40,6 +47,35 @@ The key is held server-side only (`MODEL_API_KEY`, from Secret Manager in produc
 - One locked transaction for the final check and the effect; idempotent operations; reconciliation after an unknown commit.
 - Outcome verifier that reads the reservation back and returns `verified`, `mismatch` or `unknown`.
 - Activity stream over SSE with replay, owner and buyer evidence exports.
+
+## Product shape and integration path
+
+Delegate has two sides, and both are needed:
+
+- **Buyer channel** (where buyers talk): in this demo a simulated chat. In a real deployment, a business messaging channel.
+- **Delegate gate** (server): Muse Spark proposes one typed action per buyer message; the server checks it against the mandate and sends only fixed template text.
+- **Seller console** (this app): the mandate, approval of one exact reservation, revoke, and the verified receipt. Approval is deliberately outside the chat, so a typed "yes" in a conversation never counts as the seller's approval.
+
+What exists today, stated plainly:
+
+- The buyer chat in the demo is **simulated**. Delegate is not connected to WhatsApp, Messenger or Marketplace.
+- A WhatsApp Business Cloud API adapter is **implemented and fixture-tested, not connected to a live business number** (`services/api/delegate/channels/`, disabled by default). It verifies `X-Hub-Signature-256`, drops duplicate and replayed messages, and only sends fixed templates, inside the 24-hour customer-service window.
+- Platform facts that shape the path: personal WhatsApp has no API; the WhatsApp Business Cloud API serves business numbers, allows free-form replies only within 24 hours of the customer's last message and pre-approved templates otherwise. Meta documents Page messaging through the Messenger Platform (Send API, Page access token). We found no documented API for third-party apps to read or send personal-profile Marketplace chats.
+- The marketplace sale is the one shipped use case. The gate itself is generic: `packages/mandate_gate/examples/` shows the same checks for a support agent granting refunds. Those are package examples, not product features.
+
+## Who pays
+
+Small and mid-size sellers who list many items on peer marketplaces and want an agent to handle the haggling without giving it their address or their floor price; and platforms whose trust and safety teams need agent controls they can audit. The wedge is the incident above: agent selling is arriving, and a seller has to be able to prove what the agent was and was not allowed to do. Pricing idea (not validated): free for a handful of delegated sales a month, then a small fee per delegated sale for power sellers, and a licence for platforms embedding `mandate-gate`.
+
+## Limits of this release
+
+- **Sandbox only.** Fictional item, people and money; a reservation is not a sale, payment or handover.
+- **Embedded database, one instance.** PostgreSQL runs inside the single Cloud Run instance (`pgserver`); state is lost if the instance restarts, and demo sessions expire after 24 hours anyway.
+- **Anonymous sessions.** Each visitor gets a per-session bearer token; there are no accounts or sign-in.
+- **Simulated buyer channel** (see above).
+- **Small evaluation.** 52 scripted probes per system, written for this project; a pilot, not a statistical estimate.
+
+The upgrade path (Cloud SQL with backups, real sign-in, more than one instance, a live business number) is in `docs/OPERATIONS.md`.
 
 ## Repository
 
