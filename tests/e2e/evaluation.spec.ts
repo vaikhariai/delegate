@@ -15,6 +15,25 @@ test("evaluation page shows the server's results with denominators, or an honest
   const notRun = (latest.systems_not_run as string[] | undefined) ?? [];
   if (notRun.length) await expect(page.getByTestId("eval-not-run")).toContainText(notRun[0]!.toUpperCase());
   for (const l of ((latest.limitations as string[] | undefined) ?? []).slice(0, 2)) await expect(results).toContainText(l);
+  const systems = Object.keys((latest.systems as Record<string, unknown> | undefined) ?? {});
+  if (systems.includes("d")) {
+    // Plain names, Delegate first.
+    const titles = await results.locator(".card-title").allTextContents();
+    const first = titles.findIndex((t) => t.includes("(system"));
+    expect(titles[first]).toContain("Delegate");
+    await expect(results).toContainText("Negotiations with a forbidden commitment");
+  }
+});
+
+test("home page states the product shape and maps the reported incident to the checks", async ({ page }) => {
+  await page.goto("/");
+  const fits = page.getByTestId("where-it-fits");
+  await expect(fits).toContainText("Buyer channel");
+  await expect(fits).toContainText("Simulated in this demo");
+  await expect(fits).toContainText("Seller console");
+  await expect(fits).toContainText("never counts as the seller");
+  await expect(page.getByTestId("incident-note")).toContainText("Muse");
+  await expect(page.getByTestId("incident-map").locator("tbody tr")).toHaveCount(4);
 });
 
 test("privacy page explains data handling and is linked from every screen", async ({ page }) => {
