@@ -19,7 +19,7 @@ flowchart LR
 ## Request paths
 
 1. **Buyer message.** `POST /v1/runs/{id}/buyer-turns` stores the text as untrusted input, runs the deterministic risk scanner, appends an audit event and sets `runs.needs_step`. No model call happens in the request.
-2. **Agent step.** A worker claims the run (`FOR UPDATE SKIP LOCKED`, lease 120 s, `fence = fence + 1`). It builds the public context (Appendix B of `POLICY.md`), calls the model with no transaction open, persists the proposal as an immutable action (canonical body and hash), then calls `executor.execute(action, fence)`.
+2. **Agent step.** A worker claims the run (`FOR UPDATE SKIP LOCKED`, lease 300 s, `fence = fence + 1`). It builds the public context (Appendix B of `POLICY.md`), calls the model with no transaction open, persists the proposal as an immutable action (canonical body and hash), then calls `executor.execute(action, fence)`.
 3. **Execute.** One transaction: lock the mandate row, then the listing row, then the run. Return the stored result if an operation already exists. Reload the mandate, expire it if due, build fresh snapshots, run all gate checks. Deny or invalid: record the decision and a safe feedback code for the model. Approval required: create a pending approval bound to the hash. Allow: render the template, write the message/offer or reservation and the operation row, append events, commit.
 4. **Approval.** `POST /v1/approvals/{id}/resolve` approves and executes in the same locked transaction, so revocation and approval are strictly ordered. The verifier then reads the reservation back.
 5. **Owner controls.** Pause, revoke, edit and activate take the mandate lock. Revoke cancels pending approvals and runs in the same transaction.
