@@ -20,7 +20,8 @@ It never writes buyer-facing text, never sees the minimum price, address, phone 
 
 - Per step: up to three proposals (one plus two corrections after invalid output) and at most two gate denials before the run is marked blocked with a visible retry.
 - Per run: 24 provider calls. Per session: 60 live calls. Per day (whole service): 1,500 live calls. Global concurrency: 8.
-- Transient errors (timeout, network, 429, 5xx) retry twice with backoff; 401/403 and 400 do not.
+- Each call: at most 45 s between bytes and 60 s in total. Transient errors (timeout, network, 429, 5xx) retry twice with backoff; 401/403 and 400 do not.
+- `preview_action` arguments: the provider does not constrain tool arguments to the schema, and live the model wrote the string "null" for empty enum fields; the preview reads "null" as null in the six nullable fields. Final proposals are parsed strictly.
 - If a request with tools and a response schema is rejected with HTTP 400, the adapter retries once without tools and remembers that for the process. This is recorded in the call log as `retry_without_tools`.
 
 ## Evidence

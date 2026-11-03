@@ -39,7 +39,8 @@ class Settings:
     sessions_per_ip_per_hour: int = field(default_factory=lambda: _int("DELEGATE_SESSIONS_PER_IP_PER_HOUR", 6))
     provider_concurrency: int = field(default_factory=lambda: _int("DELEGATE_PROVIDER_CONCURRENCY", 8))
     worker_threads: int = field(default_factory=lambda: _int("DELEGATE_WORKER_THREADS", 8))
-    provider_timeout_s: float = 45.0
+    provider_timeout_s: float = 45.0  # longest wait between bytes (httpx semantics)
+    provider_deadline_s: float = field(default_factory=lambda: float(_int("DELEGATE_PROVIDER_DEADLINE_S", 60)))  # whole call
     session_ttl_s: int = 24 * 3600
     mandate_lifetime_s: int = 30 * 60
     max_provider_calls_per_run: int = 24

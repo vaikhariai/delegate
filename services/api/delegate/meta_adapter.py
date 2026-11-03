@@ -154,15 +154,25 @@ class MetaAdapter:
         try:
             with _sem(self.settings.provider_concurrency):
                 with httpx.Client(timeout=self.settings.provider_timeout_s, transport=self._transport) as client:
+                    url = f"{self.settings.meta_api_base}{path}"
                     if files is not None:
-                        resp = client.post(f"{self.settings.meta_api_base}{path}", files=files,
-                                           headers={"Authorization": f"Bearer {key}"})
+                        req = client.build_request("POST", url, files=files, headers={"Authorization": f"Bearer {key}"})
                     else:
-                        resp = client.post(
-                            f"{self.settings.meta_api_base}{path}",
-                            json=body,
-                            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                        )
+                        req = client.build_request("POST", url, json=body,
+                                                   headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+                    # httpx's timeout bounds each wait between bytes, not the whole call: live, one call that kept
+                    # sending bytes took 19 minutes. Read the body in chunks against a total deadline.
+                    deadline = time.monotonic() + self.settings.provider_deadline_s
+                    resp = client.send(req, stream=True)
+                    try:
+                        chunks: list[bytes] = []
+                        for chunk in resp.iter_bytes():
+                            chunks.append(chunk)
+                            if time.monotonic() > deadline:
+                                raise httpx.ReadTimeout("provider call exceeded its total deadline", request=req)
+                        raw = b"".join(chunks)
+                    finally:
+                        resp.close()
         except httpx.TimeoutException as exc:
             rec.status, rec.error_code = "timeout", "PROVIDER_TIMEOUT"
             raise ProviderError("PROVIDER_TIMEOUT", "The model took too long to respond.", True) from exc
@@ -174,9 +184,10 @@ class MetaAdapter:
         rec.http_status = resp.status_code
         rec.request_id = resp.headers.get("x-request-id") or resp.headers.get("request-id")
         try:
-            data: dict[str, Any] = resp.json()
+            parsed = json.loads(raw)
         except ValueError:
-            data = {}
+            parsed = None
+        data: dict[str, Any] = parsed if isinstance(parsed, dict) else {}
         rec.usage = data.get("usage")
         if resp.status_code == 200:
             return data

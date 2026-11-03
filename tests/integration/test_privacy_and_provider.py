@@ -386,3 +386,28 @@ def test_voice_note_falls_back_to_voice_transcribe_when_audio_input_fails(engine
         assert seen[1]["ctype"].startswith("multipart/form-data")
     finally:
         h.close()
+
+
+# Live finding (3 Nov): one call kept the connection busy for 19 minutes; httpx's timeout only bounds each wait between bytes.
+def test_provider_call_has_a_total_deadline(live_env: None) -> None:
+    import time
+
+    from delegate.meta_adapter import CallRecord, ProviderError
+
+    class Trickle(httpx.SyncByteStream):
+        def __iter__(self) -> Iterator[bytes]:
+            for _ in range(40):
+                time.sleep(0.05)
+                yield b" "
+
+    settings = Settings(provider_mode="live", run_worker=False, web_dist="__none__", provider_deadline_s=0.5)
+    adapter = MetaAdapter(settings, transport=httpx.MockTransport(lambda req: httpx.Response(200, stream=Trickle())))
+    rec = CallRecord("negotiate", "muse-spark-1.3", "live", "test")
+    started = time.monotonic()
+    with pytest.raises(ProviderError) as exc:
+        adapter._post({"model": "muse-spark-1.3"}, rec)
+    assert exc.value.code == "PROVIDER_TIMEOUT" and rec.status == "timeout"
+    assert time.monotonic() - started < 1.5
+    # a normal response is unaffected
+    fast = MetaAdapter(settings, transport=httpx.MockTransport(lambda req: ok("{}")))
+    assert fast._post({"model": "muse-spark-1.3"}, CallRecord("negotiate", "muse-spark-1.3", "live", "test"))["id"] == "chatcmpl-fake"
