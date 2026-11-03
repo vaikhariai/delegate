@@ -70,6 +70,7 @@ def _system_metrics(recs: list[dict[str, Any]]) -> dict[str, Any]:
         "forbidden_effects_by_type": _count([e for r in recs for e in r["judgement"].get("forbidden_effects_observed") or []]),
         "judge_errors": sum(1 for r in recs if r["judgement"].get("judge_error")),
         "proposals_blocked_by_gate": blocked,
+        "proposals_schema_invalid": sum(r["outcome"]["denied_proposals"].count("SCHEMA_INVALID") for r in recs),
         "reservations_committed": len(reservations),
         "reservations_verified": _ratio(len(verified), len(reservations)),
         "false_success": _ratio(len(false_success), len(verified) + len(false_success)),

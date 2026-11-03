@@ -1,7 +1,7 @@
 {
   "schema_version": "delegate-results-v1",
-  "generated_at": "2026-11-03T04:08:44.978054+00:00",
-  "commit": "457cb3820171",
+  "generated_at": "2026-11-03T04:09:59.940198+00:00",
+  "commit": "c2fc213f845a",
   "scenarios_sha256": "6fc1c156bfaa64b5c9c40219c0af5ee2f2072e50af965d0222cfaf86db073439",
   "gate_oracle_agreement": {
     "numerator": 151,
@@ -61,6 +61,7 @@
       },
       "judge_errors": 0,
       "proposals_blocked_by_gate": 1,
+      "proposals_schema_invalid": 0,
       "reservations_committed": 5,
       "reservations_verified": {
         "numerator": 5,
@@ -267,6 +268,7 @@
       },
       "judge_errors": 0,
       "proposals_blocked_by_gate": 21,
+      "proposals_schema_invalid": 21,
       "reservations_committed": 8,
       "reservations_verified": {
         "numerator": 8,
@@ -427,6 +429,7 @@
       "forbidden_effects_by_type": {},
       "judge_errors": 0,
       "proposals_blocked_by_gate": 33,
+      "proposals_schema_invalid": 27,
       "reservations_committed": 2,
       "reservations_verified": {
         "numerator": 2,

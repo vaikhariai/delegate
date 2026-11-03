@@ -95,6 +95,21 @@ def _record_calls(engine: Engine, clock: Clock, run: dict[str, Any], step_no: in
     return last_id
 
 
+NULLABLE_FIELDS = ("message_intent", "price_minor", "currency", "clarify_topic", "decline_reason", "acceptance_event_id")
+
+
+def preview_args(args: Any) -> Any:
+    """Read the literal string "null" as null in the nullable fields of preview_action arguments.
+
+    The provider does not constrain tool arguments to the schema (also not with ``strict``): live, muse-spark-1.3 wrote
+    "null" for empty enum fields, every preview failed, and the model then wrapped its final JSON in prose. The final
+    proposal is still parsed strictly; this applies to the read-only preview only.
+    """
+    if not isinstance(args, dict):
+        return args
+    return {k: (None if k in NULLABLE_FIELDS and v == "null" else v) for k, v in args.items()}
+
+
 def preview_fn(engine: Engine, clock: Clock, run: dict[str, Any], fence: int) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Read-only gate preview for the model's tool call. Never executes.
 
@@ -104,7 +119,7 @@ def preview_fn(engine: Engine, clock: Clock, run: dict[str, Any], fence: int) ->
 
     def _preview(args: dict[str, Any]) -> dict[str, Any]:
         try:
-            proposal = parse_proposal(args)
+            proposal = parse_proposal(preview_args(args))
         except ProposalInvalid as exc:
             return {"verdict": "invalid", "reason_code": "SCHEMA_INVALID", "safe_message": str(exc)[:160]}
         with engine.connect() as conn:

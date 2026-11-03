@@ -130,6 +130,31 @@ def test_preview_ignores_the_private_minimum(engine: Engine, real_clock: Clock) 
         h.close()
 
 
+# Live finding (3 Nov): muse-spark-1.3 writes the string "null" for empty enum fields in tool arguments; the preview reads it
+# as null, while the final proposal stays strict.
+def test_preview_reads_string_null_as_null_but_final_proposals_stay_strict(engine: Engine, real_clock: Clock) -> None:
+    h = Harness(engine, real_clock)
+    try:
+        h.new_session()
+        h.activate()
+        run_id = h.start_run()
+        h.say(run_id, "hi")
+        run = runtime.claim(engine, real_clock, "w", run_id)
+        assert run is not None
+        prev = runtime.preview_fn(engine, real_clock, run, int(run["fence"]))
+        as_sent = proposal(message_intent="counter_offer", fact_ids=[], price_minor=60000, currency="USD",
+                           clarify_topic="null", decline_reason="null", acceptance_event_id="null")
+        assert prev(as_sent)["verdict"] == "allow"
+        assert prev(proposal(kind="null"))["reason_code"] == "SCHEMA_INVALID"  # only nullable fields are read this way
+        assert prev(proposal(clarify_topic="none"))["reason_code"] == "SCHEMA_INVALID"
+    finally:
+        h.close()
+    from delegate.proposal import ProposalInvalid, parse_proposal
+
+    with pytest.raises(ProposalInvalid):
+        parse_proposal(proposal(clarify_topic="null"))
+
+
 # Finding 6/13: control characters are rejected; invisible formatting characters are stripped; proposals with them are invalid.
 def test_control_and_format_characters(engine: Engine, real_clock: Clock) -> None:
     h = Harness(engine, real_clock)
