@@ -411,3 +411,39 @@ def test_provider_call_has_a_total_deadline(live_env: None) -> None:
     # a normal response is unaffected
     fast = MetaAdapter(settings, transport=httpx.MockTransport(lambda req: ok("{}")))
     assert fast._post({"model": "muse-spark-1.3"}, CallRecord("negotiate", "muse-spark-1.3", "live", "test"))["id"] == "chatcmpl-fake"
+
+
+# Live finding (3 Nov): the model sometimes writes a sentence of prose before its strict JSON answer.
+def test_trailing_json_object_is_recovered_and_still_validated_strictly() -> None:
+    from delegate.meta_adapter import trailing_json
+    from delegate.proposal import ProposalInvalid, parse_proposal
+
+    good = json.dumps(proposal())
+    assert trailing_json(good) == good
+    recovered = trailing_json("I'll fix the format and finalize the answer." + good)
+    assert json.loads(recovered) == proposal()
+    assert parse_proposal(json.loads(recovered)).kind == "send_message"
+    nested = trailing_json('Preview said {"verdict": "invalid"} so here is the final: ' + good)
+    assert json.loads(nested) == proposal()
+    # No trailing object, or text after it: unchanged, so it fails exactly as before.
+    for bad in ("I'll retry the preview with corrected fields.", good + " Done.", "prefix {\"kind\": "):
+        assert trailing_json(bad) == bad
+    # Recovery never loosens validation: a recovered object with an extra field is still rejected.
+    with pytest.raises(ProposalInvalid):
+        parse_proposal(json.loads(trailing_json("ok: " + json.dumps({**proposal(), "extra": 1}))))
+
+
+def test_prose_wrapped_live_output_becomes_a_valid_step(engine: Engine, real_clock: Clock, live_env: None) -> None:
+    fake = FakeMeta(lambda body, n: ok("Format theek karke final bhej raha hoon." + json.dumps(proposal())))
+    h = live_harness(engine, real_clock, fake)
+    try:
+        h.new_session()
+        h.activate()
+        run_id = h.start_run()
+        h.say(run_id, "Is it available?")
+        h.step(run_id)
+        v = h.run_view(run_id)
+        assert v["state"] != "blocked"
+        assert [m for m in v["conversation"] if m["role"] == "seller"]
+    finally:
+        h.close()

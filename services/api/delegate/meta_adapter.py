@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import threading
 import time
@@ -24,6 +25,8 @@ import httpx
 
 from delegate.proposal import FIELDS, provider_schema
 from delegate.settings import Settings, load_api_key
+
+log = logging.getLogger("delegate.meta_adapter")
 
 PROMPT_VERSION = "delegate-negotiator-v3"
 DRAFT_PROMPT_VERSION = "delegate-mandate-draft-v1"
@@ -128,6 +131,36 @@ def _sem(n: int) -> threading.BoundedSemaphore:
     if n not in _semaphores:
         _semaphores[n] = threading.BoundedSemaphore(n)
     return _semaphores[n]
+
+
+def trailing_json(content: str) -> str:
+    """The model's final content, or the JSON object it ends with when it wrote prose first.
+
+    Live, muse-spark-1.3 sometimes prefixes its structured-output answer with a sentence of narration ("I'll fix the
+    format and finalize...") although response_format is strict. When the content is not JSON but ends with one complete
+    JSON object, that object is the proposal; it is then validated as strictly as any other. Anything else is returned
+    unchanged and fails validation as before.
+    """
+    text = content.strip()
+    try:
+        json.loads(text)
+        return content
+    except ValueError:
+        pass
+    if not text.endswith("}"):
+        return content
+    decoder = json.JSONDecoder()
+    start = text.find("{")
+    while start != -1:
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except ValueError:
+            obj, end = None, -1
+        if isinstance(obj, dict) and end == len(text):
+            log.info("structured output recovered from prose", extra={"event": "json_recovered", "prefix_chars": start})
+            return text[start:]
+        start = text.find("{", start + 1)
+    return content
 
 
 class MetaAdapter:
@@ -276,7 +309,7 @@ class MetaAdapter:
                     messages.append({"role": "tool", "tool_call_id": tc.get("id"), "content": json.dumps(result)})
                 continue
             content = msg.get("content")
-            return StepResult(content if isinstance(content, str) else None, calls, previews)
+            return StepResult(trailing_json(content) if isinstance(content, str) else None, calls, previews)
         return StepResult(None, calls, previews)
 
     # ------------------------------------------------------------ mandate drafting
