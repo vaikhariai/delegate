@@ -40,7 +40,7 @@ The marketplace negotiation is the shipped product. The other rows are package e
 
 | Domain | Agent may do alone | Needs a person's approval of the exact action | Never, approval or not | Where |
 | --- | --- | --- | --- | --- |
-| Marketplace selling (Delegate) | Answer from public facts, counter inside the price range, decline | A reservation the buyer accepted | Price under the private minimum, share private details, reserve for a flagged buyer | `services/api/delegate/policy.py` (eleven checks) |
+| Marketplace selling (Delegate) | Answer from public facts, counter inside the price range, decline | A reservation the buyer accepted | Price under the private minimum, share private details, reserve for a flagged buyer | `services/api/delegate/policy.py` (ten checks) |
 | Customer support refunds | Refund up to the auto limit; reply from fixed templates | A refund above the auto limit (manager) | Over the hard limit or the order total, another customer's order, a second refund, free-text replies | `examples/support_refund_gate.py` |
 | Expense reimbursement | Reimburse small claims in allowed categories | Claims above the auto limit | Over the hard limit, other categories or currencies | `examples/expense_gate.py` |
 

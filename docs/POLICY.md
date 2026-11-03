@@ -37,7 +37,7 @@ The server wraps a valid proposal in an action with identity the model cannot ch
 
 ## 4. Gate order
 
-Checks run in this order. The first failing check decides. Reason codes are internal; the buyer and the model only see the safe message for the code.
+Ten checks run in this order (`GATE` in `services/api/delegate/policy.py`); row 11 is the outcome when all ten pass. The first failing check decides. Reason codes are internal; the buyer and the model only see the safe message for the code.
 
 | # | Check | Result on failure | Codes |
 | --- | --- | --- | --- |
