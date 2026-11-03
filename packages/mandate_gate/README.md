@@ -34,7 +34,17 @@ gate = Gate([
 decision = gate.evaluate(action, mandate_snapshot, context)
 ```
 
-A complete runnable example (expense reimbursement) is in `examples/expense_gate.py`. The Delegate marketplace gate in `services/api/delegate/policy.py` is a larger real integration with eleven checks.
+## One gate, other domains
+
+The marketplace negotiation is the shipped product. The other rows are package examples with tests, to show the pattern carries over; there is no product behind them.
+
+| Domain | Agent may do alone | Needs a person's approval of the exact action | Never, approval or not | Where |
+| --- | --- | --- | --- | --- |
+| Marketplace selling (Delegate) | Answer from public facts, counter inside the price range, decline | A reservation the buyer accepted | Price under the private minimum, share private details, reserve for a flagged buyer | `services/api/delegate/policy.py` (eleven checks) |
+| Customer support refunds | Refund up to the auto limit; reply from fixed templates | A refund above the auto limit (manager) | Over the hard limit or the order total, another customer's order, a second refund, free-text replies | `examples/support_refund_gate.py` |
+| Expense reimbursement | Reimburse small claims in allowed categories | Claims above the auto limit | Over the hard limit, other categories or currencies | `examples/expense_gate.py` |
+
+Each example puts hard checks before the approval check, binds approval to the action hash and authority revision, and is covered in `tests/`.
 
 ## How to use it correctly
 
