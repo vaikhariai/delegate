@@ -119,7 +119,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         state["release"] = release_sha()
         run_worker = settings.run_worker if start_worker is None else start_worker
         if run_worker:
-            state["worker"] = Worker(eng, clock, settings, state["adapter"])
+            # Workers spend nearly all their time waiting on the provider, so several threads serve concurrent users.
+            state["worker"] = Worker(eng, clock, settings, state["adapter"], n_threads=settings.worker_threads)
             state["worker"].start()
         log.info("delegate started", extra={"event": "startup", "release": state["release"], "provider_mode": state["adapter"].mode})
         yield

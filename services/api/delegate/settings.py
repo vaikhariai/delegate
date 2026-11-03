@@ -37,7 +37,8 @@ class Settings:
     pgdata_dir: str = field(default_factory=lambda: os.environ.get("DELEGATE_PGDATA", ".pgdata"))
     web_dist: str = field(default_factory=lambda: os.environ.get("DELEGATE_WEB_DIST", "apps/web/dist"))
     sessions_per_ip_per_hour: int = field(default_factory=lambda: _int("DELEGATE_SESSIONS_PER_IP_PER_HOUR", 6))
-    provider_concurrency: int = field(default_factory=lambda: _int("DELEGATE_PROVIDER_CONCURRENCY", 4))
+    provider_concurrency: int = field(default_factory=lambda: _int("DELEGATE_PROVIDER_CONCURRENCY", 8))
+    worker_threads: int = field(default_factory=lambda: _int("DELEGATE_WORKER_THREADS", 8))
     provider_timeout_s: float = 45.0
     session_ttl_s: int = 24 * 3600
     mandate_lifetime_s: int = 30 * 60
