@@ -13,7 +13,7 @@ import { Workspace } from "./screens/Workspace";
 import { AppProvider, useApp } from "./state";
 
 const TITLES: Record<string, string> = {
-  "/": "Delegate · agent commerce that holds up in production",
+  "/": "Delegate · agent commerce with server-enforced limits",
   "/setup": "Mandate · Delegate",
   "/negotiate": "Negotiation · Delegate",
   "/outcome": "Outcome and evidence · Delegate",

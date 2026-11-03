@@ -110,8 +110,11 @@ export function AuthorityCard({ mandate, listing, events }: { mandate: Mandate; 
             <dt>Counter range</dt>
             <dd>
               {money(t.min_price_minor)} – {money(t.asking_price_minor)}
-              <span className="private-tag" title="Only you see the minimum">
+              <span className="private-tag" title="Hidden from the buyer and from the model. Shown here because you play both sides.">
                 <Icon name="eyeOff" size={14} /> min is private
+              </span>
+              <span className="private-note" data-testid="private-min-note">
+                Hidden from the buyer and from the model. Shown here because you play both sides.
               </span>
             </dd>
           </div>

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { startAndActivate } from "./helpers";
 
 test("evaluation page shows the server's results with denominators, or an honest empty state", async ({ page, request }) => {
   const latest = (await (await request.get("/v1/evaluations/latest")).json()) as Record<string, unknown>;
@@ -34,6 +35,13 @@ test("home page states the product shape and maps the reported incident to the c
   await expect(fits).toContainText("never counts as the seller");
   await expect(page.getByTestId("incident-note")).toContainText("Muse");
   await expect(page.getByTestId("incident-map").locator("tbody tr")).toHaveCount(4);
+  await expect(page.getByTestId("both-sides-note")).toContainText("You will play both sides");
+  await expect(page.locator(".eyebrow").first()).toHaveText("Agent commerce with server-enforced limits");
+});
+
+test("the seller panel says why the private minimum is visible", async ({ page }) => {
+  await startAndActivate(page);
+  await expect(page.getByTestId("private-min-note").first()).toContainText("Hidden from the buyer and from the model");
 });
 
 test("privacy page explains data handling and is linked from every screen", async ({ page }) => {

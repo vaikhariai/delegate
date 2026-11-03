@@ -39,7 +39,7 @@ export function Start() {
   return (
     <main id="main" className="page page-start">
       <section className="hero" aria-labelledby="hero-title">
-        <p className="eyebrow">Agent commerce that holds up in production</p>
+        <p className="eyebrow">Agent commerce with server-enforced limits</p>
         <h1 id="hero-title">Let an agent negotiate for you.</h1>
         <p className="lead">
           You set the limits. The server enforces them. You approve the one commitment. You get proof.
@@ -63,6 +63,9 @@ export function Start() {
             <Icon name="chart" /> See the evaluation
           </button>
         </div>
+        <p className="both-sides" data-testid="both-sides-note">
+          You will play both sides: the seller who sets the limits and approves, and the buyer who chats.
+        </p>
         <div className="hero-meta">
           <ModeChip />
           <span className="sandbox-note" data-testid="sandbox-label">

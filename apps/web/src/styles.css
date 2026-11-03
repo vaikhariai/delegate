@@ -2795,3 +2795,16 @@ textarea[aria-invalid="true"] {
     width: auto;
   }
 }
+
+.both-sides {
+  margin-top: 14px;
+  color: var(--ink-2);
+  font-size: 0.98rem;
+}
+.private-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 400;
+}
