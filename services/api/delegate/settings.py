@@ -45,7 +45,7 @@ class Settings:
     max_provider_calls_per_session: int = 60
     max_live_calls_per_day: int = field(default_factory=lambda: _int("DELEGATE_MAX_LIVE_CALLS_PER_DAY", 1500))
     max_provider_calls_per_step: int = 4
-    max_previews_per_step: int = 2
+    max_previews_per_step: int = 1  # each preview is a full model round trip (6-14 s live); one keeps steps near 20 s
     max_invalid_corrections: int = 2
     max_buyer_turns_per_run: int = 20
     max_audio_bytes: int = 4 * 1024 * 1024

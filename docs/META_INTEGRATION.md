@@ -14,7 +14,7 @@ Sources: dev.meta.ai docs for models, chat completions, tool calling and structu
 
 The model reads the public listing, the conversation, the current public offer, explicit acceptances and the last safe feedback code. It chooses one typed action: answer with cited public facts, counter at a price, ask a clarifying question on a fixed topic, decline for a fixed reason, propose a reservation of an accepted offer, or wait. It also reports buyer risk signals and a one-line rationale for the seller.
 
-It never writes buyer-facing text, never sees the minimum price, address, phone or notes, and has no tool that can change authority, approve, or execute. `preview_action` is read-only: it runs the gate against current state and returns a verdict and a safe message without thresholds. Previews are capped at two per step, because repeated price previews could narrow down the floor.
+It never writes buyer-facing text, never sees the minimum price, address, phone or notes, and has no tool that can change authority, approve, or execute. `preview_action` is read-only: it runs the gate against current state and returns a verdict and a safe message without thresholds. Previews are capped at one per step (each is a full model round trip), because repeated price previews could narrow down the floor.
 
 ## Bounds
 
