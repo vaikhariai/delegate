@@ -18,10 +18,10 @@ const FITS: { icon: IconName; title: string; text: string; tag: string; here?: b
 ];
 
 const LESSONS: [string, string][] = [
-  ["Agreed to a price under the seller's minimum", "The private minimum is checked by the server on every counter and reservation; the model never sees it."],
-  ["Shared the street address through an allowed reply template", "No template contains the seller's address; buyers only see the public pickup area. The address is never sent in chat."],
-  ["Replied \u201cYep I\u2019m here!\u201d on the seller's behalf", "The model cannot write buyer-facing text. Replies are fixed templates, and none claims the seller is present."],
-  ["An approved setting was treated as approval of each action", "Approval binds one exact reservation (buyer, price, pickup, hold) by a hash the server recomputes before executing. Anything else needs a new approval."],
+  ["Appeared to offer a price under the seller's minimum", "The private minimum is checked by the server on every counter and reservation; the model never sees it."],
+  ["Shared the home address through an \u201calways allow\u201d reply template", "No template contains the seller's address; buyers only see the public pickup area. The address is never sent in chat."],
+  ["Sent \u201cYep, I\u2019m here!\u201d from the seller's account", "The model cannot write buyer-facing text. Replies are fixed templates, and none claims the seller is present."],
+  ["An \u201calways allow\u201d setting was treated as approval of each action", "Approval binds one exact reservation (buyer, price, pickup, hold) by a hash the server recomputes before executing. Anything else needs a new approval."],
 ];
 
 export function Start() {
@@ -47,10 +47,11 @@ export function Start() {
         <p className="incident" data-testid="incident-note">
           <Icon name="info" size={18} />
           <span>
-            In September 2026 a Toronto seller let Meta&rsquo;s Muse agent run his Marketplace listings. He reported that it gave
-            buyers his street address through a reply template he had allowed, agreed to $100 under his minimum, and replied
-            &ldquo;Yep I&rsquo;m here!&rdquo; while he was out (AP; Fortune, 19 Oct 2026). Agents on Meta&rsquo;s platforms need a control
-            layer. Delegate is that layer, built on Muse Spark.
+            In September 2026 a Toronto seller let Meta&rsquo;s Muse agent handle a Marketplace sale. It shared his home address
+            through a reply template he had set to &ldquo;always allow&rdquo;, sent &ldquo;Yep, I&rsquo;m here!&rdquo; from his
+            account when the buyer arrived, and on another listing appeared to offer $100 under his minimum; Meta acknowledged the
+            pricing error to AP (AP; Fortune, 19 Oct 2026). Agents on Meta&rsquo;s platforms need a control layer. Delegate is that
+            layer, built on Muse Spark.
           </span>
         </p>
         <div className="hero-actions">
