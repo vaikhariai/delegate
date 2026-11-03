@@ -45,3 +45,22 @@ def test_lab_evaluates_an_edited_proposal_with_the_real_gate(h: Harness) -> None
     bad = resp.json()["trace"]
     assert bad["verdict"] == "invalid" and bad["decided_by"] == "1_schema"
     assert h.client.post("/v1/lab/evaluate", json={"case_id": "D01-01", "proposal": base, "extra": 1}).status_code == 422
+
+
+def test_lab_evaluate_is_rate_limited_per_network(h: Harness) -> None:
+    from delegate.app import WindowLimiter
+
+    lim = WindowLimiter(per_minute=3)
+    assert [lim.allow("ip-a", t) for t in (0, 1, 2, 3)] == [True, True, True, False]
+    assert lim.allow("ip-b", 3)  # other networks are unaffected
+    assert lim.allow("ip-a", 61)  # the window slides
+    case = h.client.get("/v1/lab/cases").json()["cases"][0]["case_id"]
+    detail = h.client.get(f"/v1/lab/cases/{case}").json()
+    codes = [h.client.post("/v1/lab/evaluate", json={"case_id": case, "proposal": detail["proposal"]},
+                           headers={"X-Forwarded-For": "203.0.113.9"}).status_code for _ in range(61)]
+    assert codes[:60] == [200] * 60 and codes[60] == 429
+
+
+def test_responses_carry_hsts(h: Harness) -> None:
+    r = h.client.get("/v1/health")
+    assert r.headers["Strict-Transport-Security"] == "max-age=31536000"

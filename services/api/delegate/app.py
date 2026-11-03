@@ -111,11 +111,33 @@ _streams: dict[str, int] = {}
 _streams_lock = threading.Lock()
 
 
+class WindowLimiter:
+    """Per-key sliding one-minute window, in process memory (one instance). Used for the unauthenticated lab endpoint."""
+
+    def __init__(self, per_minute: int) -> None:
+        self.per_minute = per_minute
+        self._hits: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, now: float) -> bool:
+        with self._lock:
+            recent = [t for t in self._hits.get(key, []) if now - t < 60]
+            if len(recent) >= self.per_minute:
+                self._hits[key] = recent
+                return False
+            recent.append(now)
+            self._hits[key] = recent
+            if len(self._hits) > 10_000:  # bound memory: drop keys with no recent hits
+                self._hits = {k: v for k, v in self._hits.items() if v and now - v[-1] < 60}
+            return True
+
+
 def create_app(settings: Settings | None = None, clock: Clock | None = None, engine: Engine | None = None,
                start_worker: bool | None = None, adapter: MetaAdapter | None = None) -> FastAPI:
     settings = settings or Settings()
     clock = clock or Clock()
     state: dict[str, Any] = {}
+    lab_limiter = WindowLimiter(per_minute=60)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -191,6 +213,7 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
             "connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'"
         )
         response.headers["Permissions-Policy"] = "microphone=(self), camera=()"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
         if request.url.path.startswith("/v1/"):
             response.headers["Cache-Control"] = "no-store"
         if not request.url.path.startswith("/assets/"):
@@ -551,6 +574,8 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
 
     @app.post("/v1/lab/evaluate")
     def lab_evaluate(body: LabEvalBody, request: Request) -> dict[str, Any]:
+        if not lab_limiter.allow(client_ip(request), time.monotonic()):
+            raise store.ApiError(429, "RATE_LIMITED", "Too many lab evaluations from this network. Wait a minute and try again.")
         if int(request.headers.get("content-length") or 0) > 20_000:
             raise store.ApiError(413, "BODY_SIZE", "Keep lab proposals under 20 KB.")
         r = lab.evaluate_edited(body.case_id, body.proposal)
