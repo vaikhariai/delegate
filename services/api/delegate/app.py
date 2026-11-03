@@ -24,6 +24,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine, text
 
 from delegate import budget, executor, lab, obs, projections, signals, store
+from delegate.channels import service as channel_service
+from delegate.channels import whatsapp
+from delegate.channels.base import ChannelError
 from delegate.clock import Clock
 from delegate.db import exe, make_engine, migrate, one, tx
 from delegate.meta_adapter import MetaAdapter, ProviderError
@@ -50,6 +53,11 @@ class Strict(BaseModel):
 
 class StartRunBody(Strict):
     buyer_id: str = "buyer-riya"
+
+
+class ChannelBindingBody(Strict):
+    channel: str = Field(max_length=20)
+    external_user: str = Field(max_length=32)
 
 
 class BuyerTurnBody(Strict):
@@ -122,8 +130,14 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
             # Workers spend nearly all their time waiting on the provider, so several threads serve concurrent users.
             state["worker"] = Worker(eng, clock, settings, state["adapter"], n_threads=settings.worker_threads)
             state["worker"].start()
-        log.info("delegate started", extra={"event": "startup", "release": state["release"], "provider_mode": state["adapter"].mode})
+        stop_channels = threading.Event()
+        if settings.whatsapp_enabled and run_worker:
+            threading.Thread(target=channel_service.delivery_loop, args=(eng, clock, settings, stop_channels.is_set),
+                             name="channel-delivery", daemon=True).start()
+        log.info("delegate started", extra={"event": "startup", "release": state["release"], "provider_mode": state["adapter"].mode,
+                                            "whatsapp_channel": settings.whatsapp_enabled})
         yield
+        stop_channels.set()
         if "worker" in state:
             state["worker"].stop()
 
@@ -400,6 +414,35 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None, eng
         return idempotent(p, idempotency_key, f"buyer-turns:{run_id}",
                           lambda: _woke(store.buyer_turn(eng(), clock, p, run_id, body.text, settings.max_buyer_turns_per_run)), 202,
                           body=body.model_dump())
+
+    if settings.whatsapp_enabled:
+        # WhatsApp Business Cloud API adapter. Registered only when DELEGATE_WHATSAPP_ENABLED=1 (off by default).
+        @app.get("/v1/channels/whatsapp/webhook", include_in_schema=False)
+        def whatsapp_verify(mode: str | None = Query(default=None, alias="hub.mode"),
+                            token: str | None = Query(default=None, alias="hub.verify_token"),
+                            challenge: str | None = Query(default=None, alias="hub.challenge")) -> Response:
+            try:
+                return Response(whatsapp.verify_subscription(mode, token, challenge, settings.whatsapp_verify_token), media_type="text/plain")
+            except ChannelError as exc:
+                raise store.ApiError(403, exc.code, "Webhook verification failed.") from exc
+
+        @app.post("/v1/channels/whatsapp/webhook", include_in_schema=False)
+        async def whatsapp_webhook(request: Request) -> dict[str, Any]:
+            raw = await request.body()
+            if not whatsapp.verify_signature(raw, request.headers.get("x-hub-signature-256"), settings.whatsapp_app_secret):
+                raise store.ApiError(403, "BAD_SIGNATURE", "Signature check failed.")
+            try:
+                msgs = whatsapp.parse_webhook(json.loads(raw))
+            except (ValueError, ChannelError) as exc:
+                raise store.ApiError(400, "BAD_WEBHOOK", "Not a WhatsApp messages webhook.") from exc
+            outcomes = await run_in_threadpool(channel_service.handle_inbound, eng(), clock, settings, msgs)
+            if outcomes.get("accepted"):
+                signals.notify_work()
+            return {"received": len(msgs), "outcomes": outcomes}
+
+        @app.post("/v1/runs/{run_id}/channel-binding", status_code=201)
+        def bind_channel(run_id: str, body: ChannelBindingBody, p: store.Principal = Depends(principal)) -> dict[str, Any]:
+            return channel_service.bind(eng(), clock, p, run_id, body.channel, body.external_user)
 
     @app.post("/v1/runs/{run_id}/accept-offer", status_code=202)
     def accept(run_id: str, body: AcceptBody, p: store.Principal = Depends(principal),

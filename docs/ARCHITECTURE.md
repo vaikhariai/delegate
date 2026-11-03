@@ -43,3 +43,15 @@ Run: `created`, `running`, `awaiting_buyer`, `waiting_approval`, `paused`, `bloc
 ## Connector seam
 
 The marketplace sandbox is local tables written in the same transaction as the gate check. A real marketplace connector would need its own idempotency key, readback and an `unknown` state, and could not share this transaction. That is future work and is not claimed.
+
+## Buyer channels
+
+`services/api/delegate/channels/` is the seam between where buyers talk and the negotiation. The in-app buyer simulator is the default channel. A WhatsApp Business Cloud API adapter (`whatsapp.py`, `service.py`, migration `0007_channels.sql`) is implemented and fixture-tested but **off by default** (`DELEGATE_WHATSAPP_ENABLED=0`) and not connected to a live business number:
+
+- `GET /v1/channels/whatsapp/webhook` answers Meta's subscription check only with the configured verify token.
+- `POST /v1/channels/whatsapp/webhook` requires a valid `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the app secret), records each message ID once (redeliveries and replays are dropped), refuses messages older than an hour, and feeds text from a bound buyer into the same `buyer_turn` path as the simulator: untrusted input to the same gate.
+- `POST /v1/runs/{id}/channel-binding` (owner only) ties one WhatsApp ID to one negotiation.
+- A delivery loop sends only seller messages the server rendered from fixed templates, only to the bound buyer, and only within 24 hours of the buyer's last message; outside the window it records `outside_window` and sends nothing.
+- Approval never travels over the channel: the seller approves the exact reservation in the console.
+
+Tests: `tests/integration/test_whatsapp_channel.py` (synthetic payloads in Meta's documented shapes; outbound to a fake transport).

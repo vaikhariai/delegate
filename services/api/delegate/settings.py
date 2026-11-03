@@ -52,6 +52,14 @@ class Settings:
     max_buyer_turns_per_run: int = 20
     max_audio_bytes: int = 4 * 1024 * 1024
     run_worker: bool = field(default_factory=lambda: os.environ.get("DELEGATE_RUN_WORKER", "1") == "1")
+    # WhatsApp Business Cloud API channel adapter. Off unless explicitly enabled.
+    whatsapp_enabled: bool = field(default_factory=lambda: os.environ.get("DELEGATE_WHATSAPP_ENABLED", "0") == "1")
+    whatsapp_verify_token: str = field(default_factory=lambda: os.environ.get("WHATSAPP_VERIFY_TOKEN", ""))
+    whatsapp_app_secret: str = field(default_factory=lambda: os.environ.get("WHATSAPP_APP_SECRET", ""))
+    whatsapp_access_token: str = field(default_factory=lambda: os.environ.get("WHATSAPP_ACCESS_TOKEN", ""))
+    whatsapp_phone_number_id: str = field(default_factory=lambda: os.environ.get("WHATSAPP_PHONE_NUMBER_ID", ""))
+    whatsapp_graph_base: str = field(default_factory=lambda: os.environ.get("WHATSAPP_GRAPH_BASE", "https://graph.facebook.com/v26.0"))
+    whatsapp_max_message_age_s: int = field(default_factory=lambda: _int("WHATSAPP_MAX_MESSAGE_AGE_S", 3600))
 
     def resolved_provider_mode(self) -> str:
         """'live' only when a key exists; otherwise 'unavailable' unless mock was explicitly chosen."""
