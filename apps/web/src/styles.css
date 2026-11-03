@@ -2104,12 +2104,30 @@ input[aria-invalid="true"],
   .nav-inner {
     padding: 8px 16px;
   }
+  /* Two header rows on phones: brand and chip (plus New scenario) on the first, links on the second. */
+  .nav-inner {
+    gap: 6px 10px;
+  }
+  .nav-right {
+    flex: 1 1 0;
+    justify-content: flex-end;
+    gap: 8px;
+  }
   .nav .mode-chip.compact {
-    max-width: 200px;
-    white-space: normal;
+    display: inline-block;
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     line-height: 1.25;
     font-size: 0.78rem;
     padding: 5px 10px;
+  }
+  .nav .mode-chip.compact .dot {
+    display: inline-block;
+    margin-right: 6px;
+    vertical-align: 1px;
   }
   .listing-thumb {
     display: none;
@@ -2807,4 +2825,20 @@ textarea[aria-invalid="true"] {
   font-size: 0.8rem;
   color: var(--muted);
   font-weight: 400;
+}
+
+/* Desktop: notices sit bottom-left so they do not cover the authority card on the right. */
+@media (min-width: 1024px) {
+  .notices {
+    left: 20px;
+    right: auto;
+  }
+}
+
+/* Desktop: before the first message the empty conversation stays short, so the quick prompts sit near the heading. */
+@media (min-width: 1024px) {
+  .chat-log:has(.chat-empty) {
+    flex: 0 0 auto;
+    min-height: 220px;
+  }
 }

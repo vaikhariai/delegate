@@ -9,7 +9,7 @@
 5. Switch to the buyer **Arjun**, make a fair offer, and tap **Accept offer** on the agent's counter. Approve the exact reservation in the drawer.
 6. The outcome page shows **Reserved in sandbox · Verified**, field by field. Try **Revoke** in a new scenario to see authority end instantly.
 
-Everything is fictional and sandboxed: no real listings, payments or people. No account or key needed. Evidence for every claim: `docs/LAUNCH_READINESS.md` and `evaluation/REPORT.md`.
+Everything is fictional and sandboxed: no real listings, payments or people. No account or key needed. Evidence for every claim: `docs/LAUNCH_READINESS.md` and `evaluation/REPORT.md`. Known limits: [Limits of this release](#limits-of-this-release).
 
 **Let an agent negotiate for you. You set the limits, the server enforces them, you approve the one commitment, and you get proof of what happened.**
 
@@ -68,6 +68,18 @@ What exists today, stated plainly:
 Small and mid-size sellers who list many items on peer marketplaces and want an agent to handle the haggling without giving it their address or their floor price; and platforms whose trust and safety teams need agent controls they can audit. The wedge is the incident above: agent selling is arriving, and a seller has to be able to prove what the agent was and was not allowed to do. Pricing idea (not validated): free for a handful of delegated sales a month, then a small fee per delegated sale for power sellers, and a licence for platforms embedding `mandate-gate`.
 
 
+## Repository
+
+| Path | Contents |
+| --- | --- |
+| `services/api/delegate/` | FastAPI app, gate (`policy.py`), executor, runtime, Meta adapter, projections, renderers, risk scanner |
+| `packages/mandate_gate/` | The reusable open-source gate: ordered checks, canonical action hashing, approval binding (Apache-2.0) |
+| `apps/web/` | React + TypeScript web app |
+| `migrations/` | PostgreSQL schema |
+| `evaluation/` | Frozen scenario catalogue, independent oracle, baseline B0, gate harness, live evaluation runner |
+| `tests/` | Unit and integration tests against real PostgreSQL |
+| `docs/` | Policy, architecture, decisions, Meta integration, security and data, operations |
+
 ## Limits of this release
 
 - **Sandbox only.** Fictional item, people and money; a reservation is not a sale, payment or handover.
@@ -85,20 +97,9 @@ Small and mid-size sellers who list many items on peer marketplaces and want an 
 - **One item, two buyers.** The demo is one listing; nothing yet shows a seller with many listings and many buyers.
 - **Evaluated code versus deployed code.** The deployed release adds the prose-to-JSON recovery (`docs/DECISIONS.md` #18) after the live evaluation ran; the evaluation was not rerun.
 - **Small details.** Duplicate proposals are recognised before the remaining checks run, so the executor reports "duplicate" where the pure gate would report the first failing check (no effect on outcomes); SSE stream counts live in process memory (fine for one instance); accessibility and phone layouts are checked by automated axe and Playwright tests at 360 to 1280 px, not by user testing.
+- **Page title in the deployed bundle.** The static HTML title still reads "agent commerce that holds up in production" until the app loads and sets the corrected title; a one-line fix is queued for the first deploy after judging.
 
 The upgrade path (Cloud SQL with backups, real sign-in, more than one instance, a live business number) is in `docs/OPERATIONS.md`.
-
-## Repository
-
-| Path | Contents |
-| --- | --- |
-| `services/api/delegate/` | FastAPI app, gate (`policy.py`), executor, runtime, Meta adapter, projections, renderers, risk scanner |
-| `packages/mandate_gate/` | The reusable open-source gate: ordered checks, canonical action hashing, approval binding (Apache-2.0) |
-| `apps/web/` | React + TypeScript web app |
-| `migrations/` | PostgreSQL schema |
-| `evaluation/` | Frozen scenario catalogue, independent oracle, baseline B0, gate harness, live evaluation runner |
-| `tests/` | Unit and integration tests against real PostgreSQL |
-| `docs/` | Policy, architecture, decisions, Meta integration, security and data, operations |
 
 ## Run locally
 

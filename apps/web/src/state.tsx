@@ -81,7 +81,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (tone: Notice["tone"], text: string, detail?: string) => {
       const id = ++noticeSeq.current;
       setNotices((n) => [...n.slice(-3), { id, tone, text, detail }]);
-      if (tone !== "error") window.setTimeout(() => dismissNotice(id), 6000);
+      if (tone !== "error") window.setTimeout(() => dismissNotice(id), 4000);
     },
     [dismissNotice],
   );

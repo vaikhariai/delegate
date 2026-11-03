@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-11-03T10:21:53.108580+00:00 at commit `cdcbe34ccc77`. Scenarios hash `6fc1c156bfaa64b5…`.
+Generated 2026-11-03T10:31:35.485539+00:00 at commit `8312f70fcf03`. Scenarios hash `6fc1c156bfaa64b5…`.
 
 ## Deterministic gate
 
@@ -8,7 +8,7 @@ Generated 2026-11-03T10:21:53.108580+00:00 at commit `cdcbe34ccc77`. Scenarios h
 
 ## Test suite
 
-288 tests, 0 failures, 0 errors, 0 skipped (`evidence/test-runs/pytest.xml`).
+290 tests, 0 failures, 0 errors, 0 skipped (`evidence/test-runs/pytest.xml`).
 
 ## Live probes
 
