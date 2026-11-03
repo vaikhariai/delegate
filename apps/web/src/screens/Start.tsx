@@ -5,7 +5,7 @@ import { navigate } from "../lib";
 import { useApp } from "../state";
 
 const STEPS: { icon: IconName; title: string; text: string }[] = [
-  { icon: "lock", title: "You set the limits", text: "Asking price, a private minimum, what the agent may say, and how long it may act." },
+  { icon: "lock", title: "You set the limits", text: "Asking price, a private minimum, what the agent may say, and how long it may act. Type them, or record a voice note in English or Hindi." },
   { icon: "shieldCheck", title: "The server enforces them", text: "The model only proposes typed actions. A server gate allows or blocks each one; buyers only see fixed templates." },
   { icon: "hand", title: "You approve the one commitment", text: "A reservation needs the buyer's explicit acceptance and your approval of that exact action." },
   { icon: "receipt", title: "You get proof", text: "The server reads the reservation back and shows a verified receipt, field by field." },

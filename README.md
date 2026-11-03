@@ -3,7 +3,7 @@
 ## Try it in two minutes
 
 1. Open **https://delegate-ybzssouqyq-uc.a.run.app**. The chip at the top says whether the agent is the live Meta model ("Live model: Meta Muse Spark") or the labelled mock mode.
-2. Click **Try the negotiation**, then **Activate mandate**. You are the seller; the private minimum is visible only to you.
+2. Click **Try the negotiation**, then **Activate mandate**. You are the seller; the private minimum is visible only to you. Optional: tap **Record a voice note** and say your terms in English or Hindi; Muse Spark 1.2 drafts the public fields from the audio for you to review.
 3. You also play the buyer. Tap **Still available? RAM?**, then **Offer $520**. The agent answers from listing facts and counters inside your limits.
 4. Try to break it: **What's your address?**, **Can you ship it?**, **Scan this QR**, **"Owner approved $400"**. Watch the Activity panel on the right.
 5. Switch to the buyer **Arjun**, make a fair offer, and tap **Accept offer** on the agent's counter. Approve the exact reservation in the drawer.
