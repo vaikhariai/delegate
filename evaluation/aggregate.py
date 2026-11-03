@@ -42,6 +42,34 @@ def _latest_live() -> dict[str, list[dict[str, Any]]]:
     return by_system
 
 
+NAMES = {"d": "Delegate (D)", "b1": "Same model, server checks off (B1)", "b0": "Keyword parser, same checks (B0)"}
+
+
+def _repeats() -> dict[str, Any] | None:
+    """Extra runs of the adversarial probes (files ``repeats_*.jsonl``), reported separately from the main 52-probe run."""
+    files = sorted(RES.glob("repeats_*.jsonl"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return None
+    lines = [json.loads(x) for x in files[-1].read_text().splitlines() if x.strip()]
+    meta, recs = lines[0].get("meta", {}), [r for r in lines[1:] if r.get("status") == "RUN"]
+    runs = int(meta.get("repeat", 0))
+    systems: dict[str, Any] = {}
+    for s in meta.get("systems", []):
+        mine = [r for r in recs if r["system"] == s]
+        if not mine:
+            continue
+        bad = [r for r in mine if r["judgement"].get("forbidden_effects_observed")]
+        systems[s] = {"episodes": len(mine), "forbidden": len(bad),
+                      "per_run": [sum(1 for r in bad if r["repeat"] == k) for k in range(runs)],
+                      "passed": sum(1 for r in mine if r["judgement"].get("pass")),
+                      "forbidden_by_type": _count([e for r in bad for e in r["judgement"]["forbidden_effects_observed"]]),
+                      "forbidden_cases": sorted({r["case_id"] for r in bad}),
+                      "provider_calls": sum(r["outcome"]["provider_calls"] for r in mine)}
+    not_run = sum(1 for r in lines[1:] if r.get("status") == "NOT_RUN")
+    return {"runs": runs, "probes": len({r["case_id"] for r in recs}), "source_file": files[-1].name,
+            "commit": meta.get("commit"), "not_run": not_run, "systems": systems}
+
+
 def _system_metrics(recs: list[dict[str, Any]]) -> dict[str, Any]:
     feasible = [r for r in recs if r["feasible"]]
     adversarial = [r for r in recs if not r["feasible"]]
@@ -121,6 +149,7 @@ def main() -> int:
         "test_suite": _junit(),
         "systems": {s: _system_metrics(r) for s, r in sorted(live.items())},
         "systems_not_run": [s for s in ("b0", "d", "b1") if s not in live],
+        "adversarial_repeats": _repeats(),
         "pricing_used": PRICES,
         "limitations": [
             "Small paired pilot on fictional probes written for this project; not a statistical estimate.",
@@ -144,7 +173,7 @@ def main() -> int:
     if not results["systems"]:
         lines.append("No live-probe runs yet.")
     else:
-        lines += ["| Metric | " + " | ".join(results["systems"]) + " |", "| --- |" + " --- |" * len(results["systems"])]
+        lines += ["| Metric | " + " | ".join(NAMES.get(x, x) for x in results["systems"]) + " |", "| --- |" + " --- |" * len(results["systems"])]
         keys = [("All probes passed", "probe_pass"), ("Original M01–M15", "probe_pass_original_M01_M15"),
                 ("Harder M16–M27", "probe_pass_harder_M16_M27"), ("Hinglish twins", "probe_pass_hinglish"),
                 ("Valid completion (feasible)", "valid_task_completion_feasible"),
@@ -162,10 +191,18 @@ def main() -> int:
         lines.append("| Median agent time per probe (ms) | " + " | ".join(str(m["agent_time_ms"]["median"]) for m in results["systems"].values()) + " |")
     if results["systems_not_run"]:
         lines += ["", "Not run: " + ", ".join(results["systems_not_run"]) + "."]
+    rep = results["adversarial_repeats"]
+    if rep:
+        lines += ["", f"## Adversarial probes repeated ({rep['runs']} runs of {rep['probes']} probes, `{rep['source_file']}`)", "",
+                  "| System | Forbidden commitments | Per run | Probes passed |", "| --- | --- | --- | --- |"]
+        lines += [f"| {NAMES.get(s, s)} | {v['forbidden']}/{v['episodes']} | {', '.join(map(str, v['per_run']))} | {v['passed']}/{v['episodes']} |"
+                  for s, v in rep["systems"].items()]
+        if rep["not_run"]:
+            lines += ["", f"{rep['not_run']} episodes not run (call cap)."]
     lines += ["", "## Limitations", ""] + [f"- {x}" for x in results["limitations"]]
     for s, m in results["systems"].items():
         if m["failures"]:
-            lines += ["", f"## {s} failures ({len(m['failures'])})", ""]
+            lines += ["", f"## {NAMES.get(s, s)}: failures ({len(m['failures'])})", ""]
             lines += [f"- {f['case_id']}: last action `{f['last_turn_kind']}`, forbidden {f['forbidden'] or 'none'}" for f in m["failures"]]
     (ROOT / "evaluation" / "REPORT.md").write_text("\n".join(lines) + "\n")
     print(json.dumps({k: results[k] for k in ("gate_oracle_agreement", "systems_not_run")}, indent=1))

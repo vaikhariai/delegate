@@ -230,6 +230,7 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=20261103)
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--resume", default="", help="append to this results file, skipping episodes it already contains")
+    ap.add_argument("--prefix", default="live", help="output file prefix; 'repeats' keeps extra runs out of the main results")
     args = ap.parse_args()
 
     probes = [p for p in oracle.load_live_probes() if not p.get("integration_only")]
@@ -244,7 +245,7 @@ def main() -> int:
 
     order: list[tuple[str, dict[str, Any], int]] = [(s, p, r) for r in range(args.repeat) for p in probes for s in systems]
     random.Random(args.seed).shuffle(order)  # counterbalance system order across probes
-    out_path = RESULTS_DIR / f"live_{'_'.join(systems)}_{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.jsonl"
+    out_path = RESULTS_DIR / f"{args.prefix}_{'_'.join(systems)}_{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.jsonl"
     done: set[tuple[str, str, int]] = set()
     calls_already = 0
     if args.resume:
@@ -257,7 +258,7 @@ def main() -> int:
     RESULTS_DIR.mkdir(exist_ok=True)
     meta = {
         "commit": _git_sha(), "scenarios_sha256": _file_sha(ROOT / "evaluation" / "scenarios.json"),
-        "systems": systems, "seed": args.seed, "repeat": args.repeat, "max_calls": args.max_calls,
+        "systems": systems, "seed": args.seed, "repeat": args.repeat, "max_calls": args.max_calls, "probes": args.probes or "all",
         "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
     calls_used = calls_already

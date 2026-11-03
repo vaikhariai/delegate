@@ -20,7 +20,22 @@ interface Ratio {
   extra?: string;
 }
 
+// Plain names for the measures the aggregator writes; anything else falls back to the field path.
+const LABELS: Record<string, string> = {
+  probe_pass: "Scripted negotiations passed",
+  probe_pass_original_M01_M15: "Original probes passed (M01–M15)",
+  probe_pass_harder_M16_M27: "Harder probes passed (M16–M27)",
+  probe_pass_hinglish: "Hinglish probes passed",
+  valid_task_completion_feasible: "Feasible negotiations completed correctly",
+  episodes_with_forbidden_effect: "Negotiations with a forbidden commitment",
+  adversarial_episodes_with_forbidden_effect: "Adversarial negotiations with a forbidden commitment",
+  reservations_verified: "Reservations verified by read-back",
+  false_success: "Success reported without matching evidence",
+  gate_oracle_agreement: "Gate decisions matching the hand-written cases",
+};
+
 function humanize(path: string): string {
+  if (LABELS[path]) return LABELS[path];
   return path
     .split(".")
     .filter((p) => !/^\d+$/.test(p))
@@ -54,10 +69,21 @@ function stringList(v: unknown): string[] {
 }
 
 const SYSTEM_ORDER = ["d", "b1", "b0"];
+// Delegate first: it is the system under test; the baselines follow.
+const order = (n: string) => {
+  const i = SYSTEM_ORDER.indexOf(n);
+  return i < 0 ? SYSTEM_ORDER.length : i;
+};
+
+interface Repeats {
+  runs: number;
+  probes: number;
+  systems?: Record<string, { episodes: number; forbidden: number; per_run: number[] }>;
+}
 const SYSTEM_NAMES: Record<string, string> = {
-  d: "Delegate (Muse Spark + gate)",
-  b1: "Muse Spark, server enforcement removed",
-  b0: "keyword parser, same gate",
+  d: "Delegate: Muse Spark with the server checks",
+  b1: "Same model, server checks off",
+  b0: "Keyword parser, same server checks",
 };
 
 export function Evaluation() {
@@ -73,9 +99,14 @@ export function Evaluation() {
 
   const noRun = data?.status === "no_run_yet";
   const systems = data && !noRun && data.systems && typeof data.systems === "object" ? (data.systems as Record<string, unknown>) : {};
-  const overall = data && !noRun ? findRatios({ ...data, systems: undefined }) : [];
-  // Delegate first: it is the system under test; the baselines follow.
-  const order = (n: string) => { const i = SYSTEM_ORDER.indexOf(n); return i < 0 ? SYSTEM_ORDER.length : i; };
+  const overall = data && !noRun ? findRatios({ ...data, systems: undefined, adversarial_repeats: undefined }) : [];
+  const repeats = data && !noRun ? (data.adversarial_repeats as Repeats | undefined) : undefined;
+  const repeatRows: Ratio[] = repeats
+    ? Object.entries(repeats.systems ?? {})
+        .sort(([a], [b]) => order(a) - order(b))
+        .map(([name, r]) => ({ path: `${SYSTEM_NAMES[name] ?? name}: forbidden commitments`, numerator: r.forbidden, denominator: r.episodes,
+          extra: `per run: ${r.per_run.join(", ")}` }))
+    : [];
   const perSystem = Object.entries(systems)
     .sort(([a], [b]) => order(a) - order(b))
     .map(([name, v]) => [name, findRatios(v)] as const);
@@ -170,7 +201,10 @@ export function Evaluation() {
               , edit its proposal and watch which check decides.
             </p>
           ) : null}
-          {perSystem.map(([name, rows]) => (rows.length ? <RatioTable key={name} title={`System ${name.toUpperCase()}${SYSTEM_NAMES[name] ? `: ${SYSTEM_NAMES[name]}` : ""}`} rows={rows} /> : null))}
+          {perSystem.map(([name, rows]) => (rows.length ? <RatioTable key={name} title={SYSTEM_NAMES[name] ? `${SYSTEM_NAMES[name]} (system ${name.toUpperCase()})` : `System ${name.toUpperCase()}`} rows={rows} /> : null))}
+          {repeatRows.length && repeats ? (
+            <RatioTable title={`Adversarial probes repeated ${repeats.runs} more times (${repeats.probes} probes per run)`} rows={repeatRows} />
+          ) : null}
           {notRun.length ? (
             <p className="muted" data-testid="eval-not-run">
               <Icon name="info" size={18} /> Not run yet, so no numbers are shown for: {notRun.map((n) => n.toUpperCase()).join(", ")}.
