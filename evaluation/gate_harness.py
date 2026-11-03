@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "services" / "api"))
 sys.path.insert(0, str(ROOT / "evaluation"))
 
 import oracle  # noqa: E402
+
 from delegate.policy import AcceptanceSnap, ActionEnvelope, GateContext, MandateSnapshot, OfferSnap, evaluate  # noqa: E402
 from delegate.proposal import ProposalInvalid, parse_proposal  # noqa: E402
 from mandate_gate import ApprovalRecord, ApprovalStatus  # noqa: E402

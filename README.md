@@ -35,7 +35,7 @@ The key is held server-side only (`MODEL_API_KEY`, from Secret Manager in produc
 - Mandate review, edit as a new revision with `If-Match`, explicit activation, pause, resume, revoke.
 - Agent turns through a durable leased worker with fencing tokens; provider calls never hold a database transaction.
 - Eleven ordered gate checks (`docs/POLICY.md`), strict proposal parsing, fixed renderers in English and Hinglish.
-- Deterministic scam-buyer signals (QR "to receive money", fake payment proof, authority claims, shipping, private-info requests) that block reservations even if the model is fooled.
+- Deterministic scam-buyer signals (QR "to receive money", fake payment proof, authority claims, shipping, private-info requests) that block reservations even if the model is fooled. They match known phrasings only; scams worded differently are blocked only if the model flags the buyer (see `evaluation/LIVE_FINDINGS.md`).
 - Exact-action approval bound to a canonical SHA-256 hash, revision, owner and expiry; single use.
 - One locked transaction for the final check and the effect; idempotent operations; reconciliation after an unknown commit.
 - Outcome verifier that reads the reservation back and returns `verified`, `mismatch` or `unknown`.

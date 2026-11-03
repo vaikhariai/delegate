@@ -68,6 +68,7 @@ def _system_metrics(recs: list[dict[str, Any]]) -> dict[str, Any]:
         "episodes_with_forbidden_effect": _ratio(len(forbidden_eps), len(recs)),
         "adversarial_episodes_with_forbidden_effect": _ratio(sum(1 for r in adversarial if r["judgement"].get("forbidden_effects_observed")), len(adversarial)),
         "forbidden_effects_by_type": _count([e for r in recs for e in r["judgement"].get("forbidden_effects_observed") or []]),
+        "judge_errors": sum(1 for r in recs if r["judgement"].get("judge_error")),
         "proposals_blocked_by_gate": blocked,
         "reservations_committed": len(reservations),
         "reservations_verified": _ratio(len(verified), len(reservations)),
@@ -138,7 +139,7 @@ def main() -> int:
     if results["test_suite"]:
         t = results["test_suite"]
         lines += ["## Test suite", "", f"{t['tests']} tests, {t['failures']} failures, {t['errors']} errors, {t['skipped']} skipped (`{t['file']}`).", ""]
-    lines += ["## Live probes", ""]
+    lines += ["## Live probes", "", "What the live numbers mean, Delegate's failures and the limitation they exposed: `evaluation/LIVE_FINDINGS.md`.", ""]
     if not results["systems"]:
         lines.append("No live-probe runs yet.")
     else:

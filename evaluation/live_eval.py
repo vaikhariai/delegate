@@ -37,16 +37,16 @@ sys.path.insert(0, str(ROOT / "evaluation"))
 sys.path.insert(0, str(ROOT))
 
 import oracle  # noqa: E402
-from mandate_gate import Decision, Verdict  # noqa: E402
+from baselines import b0_parser  # noqa: E402
 from sqlalchemy import Engine  # noqa: E402
 
-from baselines import b0_parser  # noqa: E402
 from delegate import executor, runtime  # noqa: E402
 from delegate.clock import Clock  # noqa: E402
 from delegate.db import embedded_url, make_engine, migrate, rows  # noqa: E402
 from delegate.meta_adapter import MetaAdapter  # noqa: E402
 from delegate.policy import ActionEnvelope, GateContext, MandateSnapshot  # noqa: E402
 from delegate.settings import Settings  # noqa: E402
+from mandate_gate import Decision, Verdict  # noqa: E402
 
 RESULTS_DIR = ROOT / "evaluation" / "results"
 
@@ -158,9 +158,10 @@ class Driver:
             sig = rows(conn, "SELECT risk_signals FROM buyer_events WHERE run_id = :r", r=run_id)
             calls = rows(conn, "SELECT mode, status, latency_ms, usage FROM provider_calls WHERE run_id = :r", r=run_id)
             receipt = rows(conn, "SELECT verdict FROM receipts WHERE run_id = :r", r=run_id)
+        last_kind = "none"  # no parseable proposal in the episode (e.g. invalid output or provider error); judged as not acceptable
         if acts:
             last = acts[-1]["raw_proposal"] or {}
-            last_kind = last.get("kind")
+            last_kind = str(last.get("kind") or "none")
             if last_kind == "send_message" and last.get("message_intent"):
                 last_kind = f"send_message:{last['message_intent']}"
                 third = last.get("clarify_topic") or last.get("decline_reason")
@@ -213,6 +214,14 @@ def judge(probe: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any]:
         return {"pass": None, "note": "probe_judge.py not available"}
 
 
+def safe_judge(probe: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any]:
+    """A judge error fails the episode (recorded with the reason) instead of aborting the whole paired run."""
+    try:
+        return judge(probe, outcome)
+    except (ValueError, KeyError, TypeError) as exc:
+        return {"pass": False, "judge_error": f"{type(exc).__name__}: {exc}"}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--systems", default="b0")
@@ -220,6 +229,7 @@ def main() -> int:
     ap.add_argument("--max-calls", type=int, default=120)
     ap.add_argument("--seed", type=int, default=20261103)
     ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--resume", default="", help="append to this results file, skipping episodes it already contains")
     args = ap.parse_args()
 
     probes = [p for p in oracle.load_live_probes() if not p.get("integration_only")]
@@ -235,16 +245,28 @@ def main() -> int:
     order: list[tuple[str, dict[str, Any], int]] = [(s, p, r) for r in range(args.repeat) for p in probes for s in systems]
     random.Random(args.seed).shuffle(order)  # counterbalance system order across probes
     out_path = RESULTS_DIR / f"live_{'_'.join(systems)}_{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.jsonl"
+    done: set[tuple[str, str, int]] = set()
+    calls_already = 0
+    if args.resume:
+        out_path = Path(args.resume).resolve()
+        for line in out_path.read_text().splitlines()[1:]:
+            rec = json.loads(line)
+            if rec.get("status") == "RUN":
+                done.add((rec["system"], rec["case_id"], rec["repeat"]))
+                calls_already += rec["outcome"]["provider_calls"]
     RESULTS_DIR.mkdir(exist_ok=True)
     meta = {
         "commit": _git_sha(), "scenarios_sha256": _file_sha(ROOT / "evaluation" / "scenarios.json"),
         "systems": systems, "seed": args.seed, "repeat": args.repeat, "max_calls": args.max_calls,
         "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
-    calls_used = 0
-    with out_path.open("w") as fh:
-        fh.write(json.dumps({"meta": meta}) + "\n")
+    calls_used = calls_already
+    with out_path.open("a" if args.resume else "w") as fh:
+        if not args.resume:
+            fh.write(json.dumps({"meta": meta}) + "\n")
         for system, probe, rep in order:
+            if (system, probe["case_id"], rep) in done:
+                continue
             settings = Settings(provider_mode="mock" if system == "b0" else "live", run_worker=False, web_dist="__none__",
                                 sessions_per_ip_per_hour=100_000)
             adapter = MetaAdapter(settings)
@@ -270,7 +292,7 @@ def main() -> int:
                     "b1": "LIVE_PROVIDER+PRIVATE_ABLATION_SANDBOX"}[system]
             rec = {"system": system, "case_id": probe["case_id"], "family": probe["family"], "language": probe.get("language"),
                    "feasible": probe["feasible"], "repeat": rep, "status": "RUN", "evidence_mode": mode,
-                   "outcome": outcome, "judgement": judge(probe, outcome)}
+                   "outcome": outcome, "judgement": safe_judge(probe, outcome)}
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             fh.flush()
             print(f"{system:3} {probe['case_id']:5} pass={rec['judgement'].get('pass')} calls={outcome['provider_calls']} last={outcome['last_turn_kind']}")

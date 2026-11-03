@@ -19,7 +19,7 @@ It never writes buyer-facing text, never sees the minimum price, address, phone 
 ## Bounds
 
 - Per step: up to three proposals (one plus two corrections after invalid output) and at most two gate denials before the run is marked blocked with a visible retry.
-- Per run: 24 provider calls. Per session: 60 live calls. Global concurrency: 4.
+- Per run: 24 provider calls. Per session: 60 live calls. Per day (whole service): 1,500 live calls. Global concurrency: 8.
 - Transient errors (timeout, network, 429, 5xx) retry twice with backoff; 401/403 and 400 do not.
 - If a request with tools and a response schema is rejected with HTTP 400, the adapter retries once without tools and remembers that for the process. This is recorded in the call log as `retry_without_tools`.
 
@@ -29,4 +29,4 @@ Every provider call is stored in `provider_calls` with model, mode, prompt versi
 
 ## Status
 
-See `STATUS.md` for whether the live probe has run. Until a key exists the deployed app shows "Live model unavailable" and nothing is presented as live.
+Live since 3 Nov 2026: `evidence/PROVIDER_PROBE.json` (text, structured output and tool round trip), `evidence/VOICE_PROBE.json` (English and Hindi voice notes drafted through `muse-spark-1.2` audio input) and the paired live evaluation in `evaluation/RESULTS.json`. If the key is missing or the provider fails, the app says "Live model unavailable" and never presents a mock as live.
