@@ -26,8 +26,8 @@ It never writes buyer-facing text, never sees the minimum price, address, phone 
 
 ## Evidence
 
-Every provider call is stored in `provider_calls` with model, mode, prompt version, HTTP status, latency, token usage and the provider request ID, but never the key or full raw response. Owner evidence exports include these records. `scripts/probe_meta.py` writes the live probe to `evidence/PROVIDER_PROBE.json`.
+Every provider call is stored in `provider_calls` with model, mode, prompt version, HTTP status, latency, token usage and the provider request ID, but never the key or full raw response. Owner evidence exports include these records.
 
 ## Status
 
-Live since 3 Nov 2026: `evidence/PROVIDER_PROBE.json` (text, structured output and tool round trip), `evidence/VOICE_PROBE.json` (English and Hindi voice notes drafted through `muse-spark-1.2` audio input) and the paired live evaluation in `evaluation/RESULTS.json`. If the key is missing or the provider fails, the app says "Live model unavailable" and never presents a mock as live.
+The paired live evaluation is in `evaluation/RESULTS.json` and `evaluation/LIVE_FINDINGS.md`. If the key is missing or the provider fails, the app says "Live model unavailable" and never presents a mock as live.

@@ -22,7 +22,7 @@ In scope: a malicious buyer (prompt injection, authority claims, scams), a malfo
 | Scam text | Scanner normalizes NFKC, lookalike letters, invisible characters and digits inside words, covers English, Hinglish and Devanagari phrasings, and also scans the last three buyer messages together; the model's signals are added and shown to the owner | 19 bypasses caught, 18 ordinary messages not flagged, 0/34 legitimate probes flagged |
 | Text safety | Control characters and unpaired surrogates rejected; zero-width and bidi characters stripped at ingest; database errors never log bound values | `test_control_and_format_characters` |
 
-Known limits: the private minimum never appears in buyer or model channels, and the preview tool ignores it, but a persistent buyer can still infer roughly where it is from accept/decline behaviour (about one bit per message; see `POLICY.md` section 7). IP-based limits are coarse and are not identity. Two code reviews (3 Nov 2026) found no authorization, cross-session or disclosure defects; all their other findings are fixed with regression tests.
+Known limits: the private minimum never appears in buyer or model channels, and the preview tool ignores it, but a persistent buyer can still infer roughly where it is from accept/decline behaviour (about one bit per message; see `POLICY.md` section 7). IP-based limits are coarse and are not identity.
 
 ## Data
 

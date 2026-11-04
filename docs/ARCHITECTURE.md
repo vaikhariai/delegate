@@ -1,6 +1,6 @@
 # Architecture
 
-One container: FastAPI serves the API and the built web app; three in-process worker threads run agent steps; PostgreSQL holds all state. On Cloud Run the database is an embedded PostgreSQL 16 inside the single instance (owner decision; see `DECISIONS.md` #3).
+One container: FastAPI serves the API and the built web app; in-process worker threads run agent steps; PostgreSQL holds all state. In the default deployment the database is an embedded PostgreSQL 16 inside the single instance; set `DATABASE_URL` to use a managed PostgreSQL instead.
 
 ```mermaid
 flowchart LR

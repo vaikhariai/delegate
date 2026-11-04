@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Clean-clone release check: fresh clone of a commit, frozen installs, builds, type checks, all tests, secret scan.
-# Usage: scripts/release_check.sh [git-ref]   (writes evidence/test-runs/clean_clone_<sha>.txt in the source repo)
+# Usage: scripts/release_check.sh [git-ref]   (also writes the log to /tmp/delegate-release-check-<sha>.txt)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 REF="${1:-HEAD}"
 SHA="$(git -C "$SRC" rev-parse --short=12 "$REF")"
 DIR="$(mktemp -d /tmp/delegate-clean-XXXX)"
-OUT="$SRC/evidence/test-runs/clean_clone_${SHA}.txt"
+OUT="/tmp/delegate-release-check-${SHA}.txt"
 step() { local name="$1"; shift; local t0=$SECONDS; if "$@" >"$DIR/step.log" 2>&1; then echo "PASS $name ($((SECONDS-t0)) s)"; else echo "FAIL $name ($((SECONDS-t0)) s)"; tail -20 "$DIR/step.log"; FAILED=1; fi; }
 FAILED=0
 {

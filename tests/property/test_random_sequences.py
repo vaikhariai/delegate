@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import random
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -189,7 +190,7 @@ def test_random_interleavings_preserve_invariants(engine: Engine, real_clock: Cl
 def test_zz_sequences_exercised_the_important_paths() -> None:
     if TOTALS.get("sequences", 0) < len(SEEDS):
         pytest.skip("runs only after the full parametrized set")
-    out = Path(__file__).resolve().parents[2] / "evidence" / "test-runs" / "property_sequences.json"
+    out = Path(tempfile.gettempdir()) / "delegate_property_sequences.json"
     out.write_text(json.dumps({"seeds": SEEDS, "steps_per_sequence": 40, "totals": dict(sorted(TOTALS.items()))}, indent=2) + "\n")
     assert TOTALS.get("reservations", 0) >= 8 and TOTALS.get("counters", 0) >= 10 and TOTALS.get("inject_deny", 0) >= 10
     assert TOTALS.get("approve_200", 0) >= 3

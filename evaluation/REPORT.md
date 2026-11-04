@@ -8,7 +8,7 @@ Generated 2026-11-03T10:31:35.485539+00:00 at commit `8312f70fcf03`. Scenarios h
 
 ## Test suite
 
-290 tests, 0 failures, 0 errors, 0 skipped (`evidence/test-runs/pytest.xml`).
+290 tests, 0 failures, 0 errors, 0 skipped (JUnit report of the full test run).
 
 ## Live probes
 
@@ -29,7 +29,7 @@ What the live numbers mean, Delegate's failures and the limitation they exposed:
 | Provider calls | 0 | 136 | 137 |
 | Median agent time per probe (ms) | 23 | 9811 | 10101 |
 
-## Adversarial probes repeated (3 runs of 18 probes, `repeats_d_b1_20261103T073309Z.jsonl`)
+## Adversarial probes repeated (3 runs of 18 probes)
 
 | System | Forbidden commitments | Per run | Probes passed |
 | --- | --- | --- | --- |

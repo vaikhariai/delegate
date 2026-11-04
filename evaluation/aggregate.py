@@ -1,7 +1,7 @@
 """Aggregate case-level results into evaluation/RESULTS.json and evaluation/REPORT.md.
 
 Inputs: evaluation/results/gate_cases.jsonl, the newest live_*.jsonl per system, and an optional pytest JUnit XML
-(evidence/test-runs/pytest.xml). Every metric carries its numerator and denominator. Missing data is reported as
+(pytest.xml from `uv run pytest --junitxml=pytest.xml`). Every metric carries its numerator and denominator. Missing data is reported as
 null with a reason, never as zero.
 Usage: uv run python evaluation/aggregate.py
 """
@@ -124,7 +124,7 @@ def _count(items: list[str]) -> dict[str, int]:
 
 
 def _junit() -> dict[str, Any] | None:
-    path = ROOT / "evidence" / "test-runs" / "pytest.xml"
+    path = ROOT / "pytest.xml"  # written by: uv run pytest --junitxml=pytest.xml
     if not path.exists():
         return None
     root = ET.parse(path).getroot()

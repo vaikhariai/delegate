@@ -2,6 +2,8 @@
 
 Independent evaluation material for Delegate, policy `delegate-policy-v1`. Nothing in this directory imports or reads `services/` or `packages/`. The expected results come from `docs/POLICY.md` and `fixtures/demo_case.json` only, so the oracle stays independent of the implementation under test.
 
+The commit IDs and the `pytest.xml` path recorded in `RESULTS.json` and `REPORT.md` refer to the development repository where these results were produced.
+
 ## Files
 
 | Path | What it is |
